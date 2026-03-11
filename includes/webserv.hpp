@@ -23,6 +23,7 @@ struct LocationConfig {
     std::string              index;        // "index.html" Le fichier à afficher par défaut quand on accède à un dossier
     bool                     autoindex;    // true/false affiche la liste des fichiers ou pas?
     std::string              upload_store; // "/tmp/uploads" Le dossier où les fichiers envoyés par le client seront sauvegardés
+    std::string              cgi_ext;
 };
 
 struct ServerConfig {
@@ -31,6 +32,9 @@ struct ServerConfig {
     std::string                  error_page;  // "/404.html"
     size_t                       max_body;    // 1048576 (1m)
     std::vector<LocationConfig>  locations;
+
+    //构造函数，设置默认值
+    ServerConfig() : port(80), max_body(1048576) {}
 };
 
 #endif
