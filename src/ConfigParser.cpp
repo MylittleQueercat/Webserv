@@ -1,4 +1,4 @@
-#include "../includes/webserv.hpp"
+#include "../includes/ConfigParser.hpp"
 #include <fstream>
 #include <sstream>
 #include <iostream>
@@ -126,22 +126,22 @@ ServerConfig    parseConfig(const std::string &filename) {
     return ServerConfig();
 }
 
-int main(int ac, char **av) {
-    if (ac != 2) {
-        std::cerr << "Usage: ./webserv config.conf" << std::endl;
-        return 1;
-    }
+// int main(int ac, char **av) {
+//     if (ac != 2) {
+//         std::cerr << "Usage: ./webserv config.conf" << std::endl;
+//         return 1;
+//     }
 
-    ServerConfig config = parseConfig(av[1]);
+//     ServerConfig config = parseConfig(av[1]);
 
-    std::cout << "port: " << config.port << std::endl;
-    std::cout << "root: " << config.root << std::endl;
-    std::cout << "max_body: " << config.max_body << std::endl;
-    std::cout << "error_page: " << config.error_page << std::endl;
-    std::cout << "locations: " << config.locations.size() << std::endl;
+//     std::cout << "port: " << config.port << std::endl;
+//     std::cout << "root: " << config.root << std::endl;
+//     std::cout << "max_body: " << config.max_body << std::endl;
+//     std::cout << "error_page: " << config.error_page << std::endl;
+//     std::cout << "locations: " << config.locations.size() << std::endl;
 
-    for (size_t i = 0; i < config.locations.size(); i++)
-        std::cout << " [" << i << "] path: " <<config.locations[i].path << std::endl;
+//     for (size_t i = 0; i < config.locations.size(); i++)
+//         std::cout << " [" << i << "] path: " <<config.locations[i].path << std::endl;
 
-    return 0;
-}
+//     return 0;
+// }

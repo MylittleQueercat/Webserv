@@ -1,4 +1,5 @@
-#include "Server.hpp"
+#include "../includes/Server.hpp"
+#include "../includes/ConfigParser.hpp"
 
 Server::Server() : server_fd(-1)
 {

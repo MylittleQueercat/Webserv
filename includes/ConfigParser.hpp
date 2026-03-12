@@ -1,5 +1,5 @@
-#ifndef WEBSERV_HPP
-# define WEBSERV_HPP
+#ifndef CONFIGPARSER_HPP
+# define CONFIGPARSER_HPP
 
 # include <string>
 # include <map>
@@ -28,6 +28,7 @@ struct LocationConfig {
 
 struct ServerConfig {
     int                          port;        // 8080
+    int                          server_fd;
     std::string                  root;        // "/var/www/html"
     std::string                  error_page;  // "/404.html"
     size_t                       max_body;    // 1048576 (1m)
@@ -36,5 +37,7 @@ struct ServerConfig {
     //构造函数，设置默认值
     ServerConfig() : port(80), max_body(1048576) {}
 };
+
+ServerConfig    parseConfig(const std::string &filename);
 
 #endif
