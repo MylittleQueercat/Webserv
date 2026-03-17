@@ -5,10 +5,14 @@
 #include <set>
 #include "../includes/Server.hpp"
 #include "../includes/ConfigParser.hpp"
+#include "../includes/Client.hpp"
+
+ClientState::ClientState() : fd(-1), headers_done(false), content_length(0) {}
 
 void runServer(std::vector<ServerConfig> &configs) {
     std::vector<struct pollfd> fds;
     std::set<int> server_fds;
+    std::map<int, ClientState> clients;
 
     // 第一步：把所有 server_fd 放进 fds
     for (size_t i = 0; i < configs.size(); i++) {
@@ -54,11 +58,33 @@ void runServer(std::vector<ServerConfig> &configs) {
                 if (bytes <= 0) {
                     std::cout << "客户端断开 fd=" << fds[i].fd << std::endl;
                     close(fds[i].fd);
+                    clients.erase(fds[i].fd);
                     fds.erase(fds.begin() + i);
                     i--;
-                } else {
-                    // 暂时 echo 回去
-                    send(fds[i].fd, buffer, bytes, 0);
+                }
+                else {
+                    // 累积数据
+                    clients[fds[i].fd].recv_buffer += std::string(buffer, bytes);
+                    
+                    // 检查请求是否完整（先只处理 GET）
+                    std::string &buf = clients[fds[i].fd].recv_buffer;
+                    if (buf.find("\r\n\r\n") != std::string::npos) {
+                        // 找到空行！请求头部完整了
+                        std::cout << "收到完整请求：" << std::endl;
+                        std::cout << buf << std::endl;
+                        
+                        // 暂时返回一个简单的 HTTP 响应
+                        std::string response =
+                            "HTTP/1.1 200 OK\r\n"
+                            "Content-Type: text/html\r\n"
+                            "Content-Length: 13\r\n"
+                            "\r\n"
+                            "Hello World!\n";
+                        send(fds[i].fd, response.c_str(), response.size(), 0);
+                        
+                        // 清空缓冲区
+                        clients[fds[i].fd].recv_buffer.clear();
+                    }
                 }
             }
         }
