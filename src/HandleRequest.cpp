@@ -2,9 +2,10 @@
 #include <vector>
 #include <iostream>
 #include <unistd.h>
-#include<fstream>
+#include <fstream>
 #include <set>
 #include <sstream>
+#include <string>
 #include "../includes/Server.hpp"
 #include "../includes/ConfigParser.hpp"
 #include "../includes/Client.hpp"
@@ -22,6 +23,23 @@ std::string handleRequest(const HttpRequest &req)
 		return "HTTP/1.1 405 Method Not Allowed\r\n\r\n"; 
 }
 
+std::string getContentType(const std::string &filepath)
+{
+	size_t dot = filepath.rfind('.');
+	if (dot == std::string::npos)
+		return "application/octet-stream";// unknown file type
+	std::string ext = filepath.substr(dot);
+	if (ext == ".html") return "text/html";
+    if (ext == ".css")  return "text/css";
+    if (ext == ".js")   return "application/javascript";
+    if (ext == ".png")  return "image/png";
+    if (ext == ".jpg")  return "image/jpeg";
+    if (ext == ".gif")  return "image/gif";
+    if (ext == ".txt")  return "text/plain";
+    if (ext == ".pdf")  return "application/pdf";
+	return "application/octet-stream";
+}
+
 std::string handleGET(const HttpRequest &req) 
 {
 	//1. concanate root and path to get the full file path
@@ -35,10 +53,11 @@ std::string handleGET(const HttpRequest &req)
 	std::ifstream file(filepath.c_str());//c_str() converts a C++ std::string into a C-style string (a const char*);std::ifstream constructor only accepts const char*
 	if (!file.is_open()) // the file doesn't exist or can't be opened
 	{
+		std::string contentType = getContentType(filepath);
 		std::string body ="<html><body><h1>404 Not Found</h1></body></html>";
 		std::ostringstream response;
 		response << "HTTP/1.1 404 Not Found\r\n";
-		response << "Content-Type: text/html\r\n";
+		response << "Content-Type:" << contentType << "\r\n";
 		response << "Content-Length: " << body.size() << "\r\n";
 		response << "\r\n";
 		response << body;

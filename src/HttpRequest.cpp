@@ -37,7 +37,7 @@ HttpRequest parseRequest(const std::string &raw) {
     //if content-Length exists -> read body
     size_t header_end = raw.find("\r\n\r\n");
     if (header_end != std::string::npos) {
-        size_t body_start = header_end + 4;
+        size_t body_start = header_end + 4;//请求行+请求头+/r/n/r/n
 
         if (req.headers.count("Content-Length")) {
             size_t content_length = atoi(req.headers["Content-Length"].c_str());
