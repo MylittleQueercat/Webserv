@@ -6,8 +6,10 @@
 #include "../includes/Server.hpp"
 #include "../includes/ConfigParser.hpp"
 #include "../includes/Client.hpp"
+#include "../includes/Http.hpp"
 
-ClientState::ClientState() : fd(-1), headers_done(false), content_length(0) {}
+ClientState::ClientState() : fd(-1), headers_done(false), 
+                              content_length(0), config(NULL) {}
 
 void runServer(std::vector<ServerConfig> &configs) {
     std::vector<struct pollfd> fds;
@@ -48,6 +50,12 @@ void runServer(std::vector<ServerConfig> &configs) {
                 client_pfd.events  = POLLIN;
                 client_pfd.revents = 0;
                 fds.push_back(client_pfd);
+
+                ClientState state;
+                state.fd = client_fd;
+                state.config = &configs[0];
+                clients[client_fd] = state; 
+
                 std::cout << "新客户端连接 fd=" << client_fd << std::endl;
 
             } else {
@@ -63,12 +71,30 @@ void runServer(std::vector<ServerConfig> &configs) {
                     i--;
                 }
                 else {
-                    // 累积数据
                     clients[fds[i].fd].recv_buffer += std::string(buffer, bytes);
                     
-                    // 检查请求是否完整（先只处理 GET）
+                    // Get client's recv_buffer
                     std::string &buf = clients[fds[i].fd].recv_buffer;
+                    // Check if request is full
                     if (buf.find("\r\n\r\n") != std::string::npos) {
+                        //Parse raw buffer into HttpRequest struct
+                        HttpRequest req = parseRequest(buf);
+
+                        // Check if body exceeds max_body -> if yes return 413
+                        if (req.body.size() > clients[fds[i].fd].config->max_body) {
+                            std::string response = 
+                                "HTTP/1.1 413 Content TOO Large\r\n"
+                                "Content-Length: 0\r\n"
+                                "\r\n";
+                            send(fds[i].fd, response.c_str(), response.size(), 0);
+                            clients[fds[i].fd].recv_buffer.clear();
+                            continue;
+                        }
+
+                        std::cout << "method: " << req.method << std::endl;
+                        std::cout << "path: " << req.path << std::endl;
+                        std::cout << "body: " << req.body << std::endl;
+
                         // 找到空行！请求头部完整了
                         std::cout << "收到完整请求：" << std::endl;
                         std::cout << buf << std::endl;
@@ -82,7 +108,7 @@ void runServer(std::vector<ServerConfig> &configs) {
                             "Hello World!\n";
                         send(fds[i].fd, response.c_str(), response.size(), 0);
                         
-                        // 清空缓冲区
+                        // clear buffer after processing
                         clients[fds[i].fd].recv_buffer.clear();
                     }
                 }

@@ -9,6 +9,7 @@
 #include "includes/Server.hpp"
 #include "includes/ConfigParser.hpp"
 #include "includes/Webserv.hpp"
+#include "includes/Http.hpp"
 
 int main(int argc, char **argv) {
     if (argc != 2) {
@@ -31,7 +32,7 @@ int main(int argc, char **argv) {
     std::vector<ServerConfig> configs;
     configs.push_back(config);
     runServer(configs);
-
+    
     return 0;
 }
 

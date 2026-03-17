@@ -13,4 +13,6 @@ struct HttpRequest {
     int         client_fd;
 };
 
+HttpRequest parseRequest(const std::string &raw);
+
 #endif
