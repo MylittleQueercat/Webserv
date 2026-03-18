@@ -93,6 +93,30 @@ void runServer(std::vector<ServerConfig> &configs) {
                             continue;
                         }
 
+                        //用这个客户端的服务器配置和请求路径，去找最匹配的 location
+                        LocationConfig* loc = matchLocation(*clients[fds[i].fd].config, req.path);
+                        if (!loc) {
+                            std::string response = "HTTP/1.1 404 Not Found\r\n"
+                                                    "Content-Length: 0\r\n\r\n";
+                            send(fds[i].fd, response.c_str(), response.size(), 0);
+                            clients[fds[i].fd].recv_buffer.clear();
+                            continue;
+                        }
+
+                        //405检查(路由匹配失败/方法不允许就返回405)
+                        bool method_allowed = false;
+                        for (size_t j = 0; j < loc->methods.size(); j++) {
+                            if (loc->methods[j] == req.method)
+                                method_allowed = true;
+                        }
+                        if (!method_allowed) {
+                            std::string response = "HTTP/1.1 405 Method Not Allowed\r\n"
+                                                    "Content-Length: 0\r\n\r\n";
+                            send(fds[i].fd, response.c_str(), response.size(), 0);
+                            clients[fds[i].fd].recv_buffer.clear();
+                            continue;
+                        }
+
                         std::cout << "method: " << req.method << std::endl;
                         std::cout << "path: " << req.path << std::endl;
                         std::cout << "body: " << req.body << std::endl;

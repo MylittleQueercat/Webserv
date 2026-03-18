@@ -39,5 +39,6 @@ struct ServerConfig {
 };
 
 ServerConfig    parseConfig(const std::string &filename);
+LocationConfig* matchLocation(ServerConfig &config, const std::string &path);
 
 #endif

@@ -127,22 +127,20 @@ ServerConfig    parseConfig(const std::string &filename) {
     return ServerConfig();
 }
 
-// int main(int ac, char **av) {
-//     if (ac != 2) {
-//         std::cerr << "Usage: ./webserv config.conf" << std::endl;
-//         return 1;
-//     }
+LocationConfig* matchLocation(ServerConfig &config, const std::string &path) {
+    LocationConfig* best_match = NULL;
+    size_t best_length = 0;
 
-//     ServerConfig config = parseConfig(av[1]);
+    for (size_t i = 0; i < config.locations.size(); i++) {
+        std::string loc_path = config.locations[i].path;
 
-//     std::cout << "port: " << config.port << std::endl;
-//     std::cout << "root: " << config.root << std::endl;
-//     std::cout << "max_body: " << config.max_body << std::endl;
-//     std::cout << "error_page: " << config.error_page << std::endl;
-//     std::cout << "locations: " << config.locations.size() << std::endl;
+        if (path.substr(0, loc_path.size()) == loc_path) {
+            if (loc_path.size() > best_length) {
+                best_match = &config.locations[i];
+                best_length = loc_path.size();
+            }
+        } 
+    }
 
-//     for (size_t i = 0; i < config.locations.size(); i++)
-//         std::cout << " [" << i << "] path: " <<config.locations[i].path << std::endl;
-
-//     return 0;
-// }
+    return best_match;
+}
