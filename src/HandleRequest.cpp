@@ -10,15 +10,16 @@
 #include "../includes/ConfigParser.hpp"
 #include "../includes/Client.hpp"
 #include "../includes/Http.hpp"
+#include <linux/limits.h>
 
 std::string handleRequest(const HttpRequest &req) 
 {
 	if (req.method == "GET")
-		return handleGET();
+		return handleGET(req);
 	else if (req.method == "POST")
-		return handlePOST();
+		return handlePOST(req);
 	else if (req.method == "DELETE")
-		return handleDELETE();
+		return handleDELETE(req);
 	else
 		return "HTTP/1.1 405 Method Not Allowed\r\n\r\n"; 
 }
@@ -49,23 +50,29 @@ std::string handleGET(const HttpRequest &req)
 	if (filepath[filepath.size() - 1] == '/')
 		filepath += "index.html";
 
-	//3. check if the file exists and is readable
-	std::ifstream file(filepath.c_str());//c_str() converts a C++ std::string into a C-style string (a const char*);std::ifstream constructor only accepts const char*
-	if (!file.is_open()) // the file doesn't exist or can't be opened
-	{
-		std::string contentType = getContentType(filepath);
-		std::string body ="<html><body><h1>404 Not Found</h1></body></html>";
-		std::ostringstream response;
-		response << "HTTP/1.1 404 Not Found\r\n";
-		response << "Content-Type:" << contentType << "\r\n";
-		response << "Content-Length: " << body.size() << "\r\n";
-		response << "\r\n";
-		response << body;
-		return response.str();
-	}
+	//3. Security check
+		//3.1 check if the path exists and valid
+	char resolved[PATH_MAX];
+	if (realpath(filepath.c_str(), resolved) == NULL)
+		return "HTTP/1.1 404 Not Found\r\n"
+				"Content-length: 0\r\n"
+				"\r\n";
+		//3.2 check if the path still inside ./www/ (which is the server's sendbox)
+	char root[PATH_MAX];
+	realpath("./www/", root);
+	if (std::string(resolved).find(root) != 0)
+		return "HTTP/1.1 403 Forbidden\r\n"
+				"Content-Length: 0\r\n"
+				"\r\n";
+		//3.3 check if the file exists and is readable
+	std::ifstream file(resolved);//c_str() converts a C++ std::string into a C-style string (a const char*);std::ifstream constructor only accepts const char*
+	if (!file.is_open())
+		return "HTTP/1.1 404 Not Found\r\n"
+				"Content-length: 0\r\n"
+				"\r\n";
+	
 	//4. read the file content
 		//std::istreambuf_iterator<char>(file) and std::istreambuf_iterator<char>() are temporary objects (not variables), and they are the two arguments passed to the std::string constructor.
-		//This is what's really happening:
 		// This is what's really happening:
 		// std::istreambuf_iterator<char> begin(file); // begin iterator
 		// std::istreambuf_iterator<char> end;         // end iterator
@@ -74,12 +81,40 @@ std::string handleGET(const HttpRequest &req)
 	std::string body((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
 	//5. construct the HTTP response
 	std::ostringstream response;
+	std::string ContentType = getContentType(resolved); 
 	response << "HTTP/1.1 200 OK\r\n";
-	response << "Content-Type: text/html\r\n";//picture?
+	response << "Content-Type:" << ContentType << "\r\n";
 	response << "Content-Length: " << body.size() << "\r\n";
 	response << "\r\n";
 	response << body;
 	return response.str();
-	//
 }
 
+std::string handlePOST(const HttpRequest &req)
+{
+//1. check body is not empty
+	if (req.body.empty())
+		return "HTTP/1.1 400 Bad Request\r\n"
+				"Content-Length: 0\r\n"
+				"\r\n";
+//2. check body size doesn't exceed max allowed size (max 10mb for exemple)
+	if (req.body.size() > 10 * 1024 * 1024)
+		return "HTTP/1.1 413 Request Entity TOO Large\r\n"
+				"Content-Length: 0\r\n"
+				"\r\n";
+//3. save the file to ./uploads/
+	//3.1 Build the upload filepath
+	std::string filepath = "./uploads/uploaded_file";
+	//3.2 open the uploaded_file for writing
+	std::ofstream outfile(filepath.c_str());//creat and open a file at that path for writing
+	if (!outfile.is_open())//checks if that operation succeeded or failed; it fails if the directory doesn't exist, or No write permission, or invalid path
+		return "HTTP/1.1 500 Internal Server Error\r\n"
+				"Content-Length: 0\r\n"
+				"\r\n"
+//4. return 201 Created
+}
+
+std::string handleDELETE(const HttpRequest &req)
+{
+
+}

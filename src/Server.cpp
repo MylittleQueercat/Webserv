@@ -106,24 +106,3 @@ int Server::get_fd() const
 	return server_fd;
 }
 
-/*
-#include "Server.hpp"
-#include <iostream>
-
-int main() {
-    std::cout << "=== Starting Server ===" << std::endl;
-    
-    Server server;
-    
-    if (!server.setup("0.0.0.0", 8080)) {
-        std::cerr << "Failed to setup server" << std::endl;
-        return 1;
-    }
-    
-    std::cout << "\n✅ Server is running on port 8080" << std::endl;
-    std::cout << "Server FD: " << server.get_fd() << std::endl;
-    
-    // Server will automatically close when it goes out of scope
-    std::cout << "\n=== Shutting down ===" << std::endl;
-    return 0;
-}*/
