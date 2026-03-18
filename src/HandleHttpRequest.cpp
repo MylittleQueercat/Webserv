@@ -11,19 +11,7 @@
 #include "../includes/Client.hpp"
 #include "../includes/Http.hpp"
 #include <linux/limits.h>
-
-std::string handleRequest(const HttpRequest &req) 
-{
-	if (req.method == "GET")
-		return handleGET(req);
-	else if (req.method == "POST")
-		return handlePOST(req);
-	else if (req.method == "DELETE")
-		return handleDELETE(req);
-	else
-		return "HTTP/1.1 405 Method Not Allowed\r\n\r\n"; 
-}
-
+#include <stdlib.h>
 std::string getContentType(const std::string &filepath)
 {
 	size_t dot = filepath.rfind('.');
@@ -105,16 +93,58 @@ std::string handlePOST(const HttpRequest &req)
 //3. save the file to ./uploads/
 	//3.1 Build the upload filepath
 	std::string filepath = "./uploads/uploaded_file";
-	//3.2 open the uploaded_file for writing
+	//3.2 open the uploaded_file for writing ： looks for ./uploads/ directory；creates a new file named "uploaded_file" inside it；opens it ready for writing
 	std::ofstream outfile(filepath.c_str());//creat and open a file at that path for writing
 	if (!outfile.is_open())//checks if that operation succeeded or failed; it fails if the directory doesn't exist, or No write permission, or invalid path
 		return "HTTP/1.1 500 Internal Server Error\r\n"
 				"Content-Length: 0\r\n"
-				"\r\n"
+				"\r\n";
+	//3.3 Write body to file
+	outfile.write(req.body.c_str(), req.body.size());
+	outfile.close();
 //4. return 201 Created
+	return "HTTP/1.1 201 Created\r\n"
+			"Content-Length: 0\r\n"
+			"\r\n";
 }
 
 std::string handleDELETE(const HttpRequest &req)
 {
+// 1. build the real file path
+	std::string filepath = "./uploads" + req.path;
+// 2. security check
+	// 2.1 resolve the real path
+	char resolved[PATH_MAX];
+	if (realpath(filepath.c_str(), resolved) == NULL)
+		return "HTTP/1.1 404 Not Found\r\n"
+				"Content-Length: 0 \r\n"
+				"\r\n";
+	// 2.2 Check the path is still inside ./uploads/
+	char root[PATH_MAX];
+	realpath("./uploads", root);
+	if (std::string(resolved).find(root) != 0)
+		return "HTTP/1.1 403 Forbidden\r\n"
+				"Content-Length: 0\r\n"
+				"\r\n";
+// 3. try to delete the file
+	if (remove(resolved) == 0)
+		return "HTTP/1.1 204 No Content\r\n"
+				"Content-Length: 0\r\n"
+				"\r\n";//success
+	else
+		return "HTTP/1.1 404 Not Found\r\n"
+				"Content-Length: 0\r\n"
+				"\r\n";
+}
 
+std::string handleRequest(const HttpRequest &req)
+{
+	if (req.method == "GET")
+		return handleGET(req);
+	else if (req.method == "POST")
+		return handlePOST(req);
+	else if (req.method == "DELETE")
+		return handleDELETE(req);
+	else
+		return "HTTP/1.1 405 Method Not Allowed\r\n\r\n"; 
 }

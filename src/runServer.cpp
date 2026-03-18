@@ -102,12 +102,8 @@ void runServer(std::vector<ServerConfig> &configs) {
                         std::cout << buf << std::endl;
                         
                         // 返回一个简单的 HTTP 响应
-                        std::string response =
-                            "HTTP/1.1 200 OK\r\n"
-                            "Content-Type: text/html\r\n"
-                            "Content-Length: 13\r\n"
-                            "\r\n"
-                            "Hello World!\n";
+                        std::string response = handleRequest(req);
+                            
                         send(fds[i].fd, response.c_str(), response.size(), 0);
                         
                         // clear buffer after processing

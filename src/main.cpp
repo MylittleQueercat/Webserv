@@ -6,10 +6,10 @@
 #include <vector>
 #include <iostream>
 
-#include "includes/Server.hpp"
-#include "includes/ConfigParser.hpp"
-#include "includes/Webserv.hpp"
-#include "includes/Http.hpp"
+#include "Server.hpp"
+#include "ConfigParser.hpp"
+#include "Webserv.hpp"
+#include "Http.hpp"
 
 int main(int argc, char **argv) {
     if (argc != 2) {

@@ -14,5 +14,6 @@ struct HttpRequest {
 };
 
 HttpRequest parseRequest(const std::string &raw);
+std::string handleRequest(const HttpRequest &req);
 
 #endif

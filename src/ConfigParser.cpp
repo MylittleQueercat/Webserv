@@ -2,6 +2,7 @@
 #include <fstream>
 #include <sstream>
 #include <iostream>
+#include <cstdlib>
 
 std::string trim(const std::string &s) {
     size_t start = s.find_first_not_of(" \t");

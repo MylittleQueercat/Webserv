@@ -1,5 +1,6 @@
 #include "../includes/Http.hpp"
 #include <sstream>
+#include <stdlib.h>
 
 HttpRequest parseRequest(const std::string &raw) {
     HttpRequest req;
