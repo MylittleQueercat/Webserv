@@ -2,6 +2,25 @@
 #include <sstream>
 #include <stdlib.h>
 
+std::string unchunk(const std::string &body) {
+    std::string result = "";
+    size_t pos = 0;
+
+    while (pos < body.size()) {
+        size_t line_end = body.find("\r\n", pos);
+        std::string hex = body.substr(pos, line_end - pos);
+        size_t chunk_size = std::strtoul(hex.c_str(), NULL, 16);
+        pos = line_end + 2;
+
+        if (chunk_size == 0)
+            break;
+
+        result += body.substr(pos, chunk_size);
+        pos += chunk_size + 2;
+    }
+    return result;
+}
+
 HttpRequest parseRequest(const std::string &raw) {
     HttpRequest req;
 
@@ -40,9 +59,12 @@ HttpRequest parseRequest(const std::string &raw) {
     if (header_end != std::string::npos) {
         size_t body_start = header_end + 4;//请求行+请求头+/r/n/r/n
 
-        if (req.headers.count("Content-Length")) {
+        if (req.headers.count("Transfer-Encoding") &&
+            req.headers["Transfer-Encoding"] == "chunked") {
+                req.body = unchunk(raw.substr(body_start));
+            }
+        else if (req.headers.count("Content-Length")) {
             size_t content_length = atoi(req.headers["Content-Length"].c_str());
-
             if (body_start + content_length <= raw.size())
                 req.body = raw.substr(body_start, content_length);
         }

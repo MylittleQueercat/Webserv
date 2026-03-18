@@ -78,62 +78,80 @@ void runServer(std::vector<ServerConfig> &configs) {
                     // Get client's recv_buffer
                     std::string &buf = clients[fds[i].fd].recv_buffer;
                     // Check if request is full
+                    bool request_complete = false;
                     if (buf.find("\r\n\r\n") != std::string::npos) {
-                        //Parse raw buffer into HttpRequest struct
-                        HttpRequest req = parseRequest(buf);
-
-                        // Check if body exceeds max_body -> if yes return 413
-                        if (req.body.size() > clients[fds[i].fd].config->max_body) {
-                            std::string response = 
-                                "HTTP/1.1 413 Content TOO Large\r\n"
-                                "Content-Length: 0\r\n"
-                                "\r\n";
-                            send(fds[i].fd, response.c_str(), response.size(), 0);
-                            clients[fds[i].fd].recv_buffer.clear();
-                            continue;
+                        if (buf.find("Transfer-Encoding: chunked") != std::string::npos) {
+                            if (buf.find("0\r\n\r\n") != std::string::npos)
+                                request_complete = true;
                         }
+                        else
+                            request_complete = true;
+                            //一直等待request完整再继续
 
-                        //用这个客户端的服务器配置和请求路径，去找最匹配的 location
-                        LocationConfig* loc = matchLocation(*clients[fds[i].fd].config, req.path);
-                        if (!loc) {
-                            std::string response = "HTTP/1.1 404 Not Found\r\n"
-                                                    "Content-Length: 0\r\n\r\n";
-                            send(fds[i].fd, response.c_str(), response.size(), 0);
-                            clients[fds[i].fd].recv_buffer.clear();
-                            continue;
-                        }
+                        if (request_complete) {
+                            //Parse raw buffer into HttpRequest struct
+                            HttpRequest req = parseRequest(buf);
 
-                        //405检查(路由匹配失败/方法不允许就返回405)
-                        bool method_allowed = false;
-                        for (size_t j = 0; j < loc->methods.size(); j++) {
-                            if (loc->methods[j] == req.method)
-                                method_allowed = true;
-                        }
-                        if (!method_allowed) {
-                            std::string response = "HTTP/1.1 405 Method Not Allowed\r\n"
-                                                    "Content-Length: 0\r\n\r\n";
-                            send(fds[i].fd, response.c_str(), response.size(), 0);
-                            clients[fds[i].fd].recv_buffer.clear();
-                            continue;
-                        }
+                            // Check if body exceeds max_body -> if yes return 413
+                            if (req.body.size() > clients[fds[i].fd].config->max_body) {
+                                std::string response = 
+                                    "HTTP/1.1 413 Content TOO Large\r\n"
+                                    "Content-Length: 0\r\n"
+                                    "\r\n";
+                                send(fds[i].fd, response.c_str(), response.size(), 0);
+                                clients[fds[i].fd].recv_buffer.clear();
+                                continue;
+                            }
 
-                        std::cout << "method: " << req.method << std::endl;
-                        std::cout << "path: " << req.path << std::endl;
-                        std::cout << "body: " << req.body << std::endl;
+                            //用这个客户端的服务器配置和请求路径，去找最匹配的 location
+                            LocationConfig* loc = matchLocation(*clients[fds[i].fd].config, req.path);
+                            if (!loc) {
+                                std::string response = "HTTP/1.1 404 Not Found\r\n"
+                                                        "Content-Length: 0\r\n\r\n";
+                                send(fds[i].fd, response.c_str(), response.size(), 0);
+                                clients[fds[i].fd].recv_buffer.clear();
+                                continue;
+                            }
 
-                        // 找到空行！请求头部完整了
-                        std::cout << "收到完整请求：" << std::endl;
-                        std::cout << buf << std::endl;
-                        
-                        // 返回一个简单的 HTTP 响应
-                        std::string response = handleRequest(req);
+                            //405检查(路由匹配失败/方法不允许就返回405)
+                            bool method_allowed = false;
+                            for (size_t j = 0; j < loc->methods.size(); j++) {
+                                if (loc->methods[j] == req.method)
+                                    method_allowed = true;
+                            }
+                            if (!method_allowed) {
+                                std::string response = "HTTP/1.1 405 Method Not Allowed\r\n"
+                                                        "Content-Length: 0\r\n\r\n";
+                                send(fds[i].fd, response.c_str(), response.size(), 0);
+                                clients[fds[i].fd].recv_buffer.clear();
+                                continue;
+                            }
+
+                            std::cout << "method: " << req.method << std::endl;
+                            std::cout << "path: " << req.path << std::endl;
+                            std::cout << "body: " << req.body << std::endl;
+
+                            // 找到空行！请求头部完整了
+                            std::cout << "收到完整请求：" << std::endl;
+                            std::cout << buf << std::endl;
                             
-                        send(fds[i].fd, response.c_str(), response.size(), 0);
-                        
-                        // clear buffer after processing
-                        clients[fds[i].fd].recv_buffer.clear();
+                            // 返回一个简单的 HTTP 响应(等lijie的代码部分)
+                            // std::string response = handleRequest(req);
+
+                            std::string response =
+                                "HTTP/1.1 200 OK\r\n"
+                                "Content-Type: text/html\r\n"
+                                "Content-Length: 13\r\n"
+                                "\r\n"
+                                "Hello World!\n";
+                                
+                            send(fds[i].fd, response.c_str(), response.size(), 0);
+                            
+                            // clear buffer after processing
+                            clients[fds[i].fd].recv_buffer.clear();
+                        }
                     }
-                }
+                
             }
         }
     }

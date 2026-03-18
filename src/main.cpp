@@ -28,14 +28,14 @@ int main(int argc, char **argv) {
     }
     config.server_fd = server.get_fd();
 
-    // 测试路由器
+    // 3. 测试路由器
     LocationConfig* loc = matchLocation(config, "/upload/photo.jpg");
     if (loc)
         std::cout << "matched: " << loc->path << std::endl;
     else
         std::cout << "no match" << std::endl;
 
-    // 3. 启动 poll() 循环
+    // 4. 启动 poll() 循环
     std::vector<ServerConfig> configs;
     configs.push_back(config);
     runServer(configs);
