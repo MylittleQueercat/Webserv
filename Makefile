@@ -7,7 +7,8 @@ SRCS = $(SRC_DIR)/ConfigParser.cpp \
 		$(SRC_DIR)/HttpRequest.cpp\
 		$(SRC_DIR)/runServer.cpp\
 		$(SRC_DIR)/Server.cpp\
-		$(SRC_DIR)/main.cpp
+		$(SRC_DIR)/CGI.cpp\
+		main.cpp
 OBJS = $(SRCS:$(SRC_DIR)/%.cpp=$(OBJ_DIR)/%.o) #$(SRCS:.cpp=.o)
 CXX=c++
 CXXFLAGS = -Wall -Wextra -Werror -std=c++98 -I includes

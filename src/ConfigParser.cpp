@@ -54,6 +54,11 @@ LocationConfig parseLocation(std::ifstream &file, const std::string &path) {
             iss >> val;
             loc.upload_store = trim(val);
         }
+        else if (key == "cgi_ext") {
+            std::string val;
+            iss >> val;
+            loc.cgi_ext = trim(val);
+        }
     }
     return loc;
 }

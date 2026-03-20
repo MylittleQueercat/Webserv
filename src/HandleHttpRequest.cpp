@@ -86,7 +86,7 @@ std::string handlePOST(const HttpRequest &req)
 				"Content-Length: 0\r\n"
 				"\r\n";
 //2. check body size doesn't exceed max allowed size (max 10mb for exemple)
-	if (req.body.size() > 10 * 1024 * 1024)
+	if (req.body.size() > 1 * 1024 * 1024)
 		return "HTTP/1.1 413 Request Entity TOO Large\r\n"
 				"Content-Length: 0\r\n"
 				"\r\n";

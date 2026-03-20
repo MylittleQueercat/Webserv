@@ -12,6 +12,10 @@ struct ClientState {
     size_t      content_length; // 请求体有多长
     ServerConfig *config; //可以帮助直接查找每个客户端具体连接哪个服务器
 
+    pid_t   cgi_pid;
+    int     cgi_output_fd;
+    bool    is_cgi;
+
     ClientState();
 };
 

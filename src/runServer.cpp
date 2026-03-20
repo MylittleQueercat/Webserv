@@ -2,16 +2,19 @@
 #include <vector>
 #include <iostream>
 #include <unistd.h>
-#include<fstream>
+#include <fstream>
 #include <set>
 #include <sstream>
+#include <sys/wait.h>
 #include "../includes/Server.hpp"
 #include "../includes/ConfigParser.hpp"
 #include "../includes/Client.hpp"
 #include "../includes/Http.hpp"
+#include "../includes/CGI.hpp"
 
 ClientState::ClientState() : fd(-1), headers_done(false), 
-                              content_length(0), config(NULL) {}
+                              content_length(0), config(NULL),
+                              cgi_pid(-1), cgi_output_fd(-1), is_cgi(false){}
 
 void runServer(std::vector<ServerConfig> &configs) {
     std::vector<struct pollfd> fds;
@@ -40,6 +43,50 @@ void runServer(std::vector<ServerConfig> &configs) {
         for (size_t i = 0; i < fds.size(); i++) {
             if (!(fds[i].revents & POLLIN))
                 continue;
+
+            // 检查是不是 CGI pipe 的 fd
+            bool is_cgi_fd = false;
+            int cgi_client_fd = -1;
+            for (std::map<int, ClientState>::iterator it = clients.begin(); 
+                it != clients.end(); ++it) {
+                if (it->second.cgi_output_fd == fds[i].fd) {
+                    is_cgi_fd = true;
+                    cgi_client_fd = it->second.fd;
+                    break;
+                }
+            }
+
+            if (is_cgi_fd) {
+                // 读取 CGI 输出
+                std::string output;
+                char buffer[4096];
+                int bytes;
+                while ((bytes = read(fds[i].fd, buffer, sizeof(buffer))) > 0)
+                    output += std::string(buffer, bytes);
+                close(fds[i].fd);
+                fds.erase(fds.begin() + i);
+                i--;
+
+                // 等次进程结束
+                waitpid(clients[cgi_client_fd].cgi_pid, NULL, 0);
+                clients[cgi_client_fd].is_cgi = false;
+
+                // 构建响应
+                std::string body_only = output.substr(output.find("\r\n\r\n") + 4);
+                std::string headers_only = output.substr(0, output.find("\r\n\r\n"));
+                std::ostringstream oss;
+                oss << body_only.size();
+
+                std::string response = "HTTP/1.1 200 OK\r\n";
+                response += "Connection: close\r\n";
+                response += headers_only + "\r\n";
+                response += "Content-Length: " + oss.str() + "\r\n";
+                response += "\r\n";
+                response += body_only;
+
+                send(cgi_client_fd, response.c_str(), response.size(), 0);
+                continue;
+            }
 
             if (server_fds.count(fds[i].fd)) {
                 // 新客户端连进来
@@ -127,6 +174,20 @@ void runServer(std::vector<ServerConfig> &configs) {
                                 continue;
                             }
 
+                            // 检查是否是 CGI 请求
+                            if (!loc->cgi_ext.empty() && 
+                                req.path.find(loc->cgi_ext) != std::string::npos) {
+                                // std::string response = executeCGI(req, *loc);
+                                // send(fds[i].fd, response.c_str(), response.size(), 0);
+                                startCGI(req, *loc, clients[fds[i].fd]);
+                                struct pollfd cgi_pfd;
+                                cgi_pfd.fd      = clients[fds[i].fd].cgi_output_fd;
+                                cgi_pfd.events  = POLLIN;
+                                cgi_pfd.revents = 0;
+                                fds.push_back(cgi_pfd);
+                                clients[fds[i].fd].recv_buffer.clear();
+                                continue;
+                            }
                             std::cout << "method: " << req.method << std::endl;
                             std::cout << "path: " << req.path << std::endl;
                             std::cout << "body: " << req.body << std::endl;
@@ -135,15 +196,8 @@ void runServer(std::vector<ServerConfig> &configs) {
                             std::cout << "收到完整请求：" << std::endl;
                             std::cout << buf << std::endl;
                             
-                            // 返回一个简单的 HTTP 响应(等lijie的代码部分)
-                            // std::string response = handleRequest(req);
-
-                            std::string response =
-                                "HTTP/1.1 200 OK\r\n"
-                                "Content-Type: text/html\r\n"
-                                "Content-Length: 13\r\n"
-                                "\r\n"
-                                "Hello World!\n";
+                            // 返回HTTP 响应
+                            std::string response = handleRequest(req);
                                 
                             send(fds[i].fd, response.c_str(), response.size(), 0);
                             
@@ -151,7 +205,7 @@ void runServer(std::vector<ServerConfig> &configs) {
                             clients[fds[i].fd].recv_buffer.clear();
                         }
                     }
-                
+                }
             }
         }
     }
