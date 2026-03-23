@@ -110,27 +110,46 @@ ServerConfig parseServer(std::ifstream &file) {
     return config;
 }
 
-ServerConfig    parseConfig(const std::string &filename) {
+std::vector<ServerConfig> parseConfigs(const std::string &filename) {
+    std::vector<ServerConfig> servers;
     std::ifstream file(filename.c_str());
     if (!file.is_open()) {
         std::cerr << "Error: cannot open " << filename << std::endl;
         exit(1);
     }
-
     std::string line;
-
     while (std::getline(file, line)) {
         line = trim(line);
-
         if (line.empty() || line[0] == '#')
-            continue ;
-        
+            continue;
         if (line == "server {")
-            return parseServer(file);
+            servers.push_back(parseServer(file));  // 每个 server{} 加进去
     }
     file.close();
-    return ServerConfig();
+    return servers;
 }
+
+// ServerConfig    parseConfig(const std::string &filename) {
+//     std::ifstream file(filename.c_str());
+//     if (!file.is_open()) {
+//         std::cerr << "Error: cannot open " << filename << std::endl;
+//         exit(1);
+//     }
+
+//     std::string line;
+
+//     while (std::getline(file, line)) {
+//         line = trim(line);
+
+//         if (line.empty() || line[0] == '#')
+//             continue ;
+        
+//         if (line == "server {")
+//             return parseServer(file);
+//     }
+//     file.close();
+//     return ServerConfig();
+// }
 
 LocationConfig* matchLocation(ServerConfig &config, const std::string &path) {
     LocationConfig* best_match = NULL;

@@ -38,7 +38,7 @@ struct ServerConfig {
     ServerConfig() : port(80), max_body(1048576) {}
 };
 
-ServerConfig    parseConfig(const std::string &filename);
+std::vector<ServerConfig>    parseConfigs(const std::string &filename);
 LocationConfig* matchLocation(ServerConfig &config, const std::string &path);
 
 #endif

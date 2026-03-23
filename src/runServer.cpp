@@ -42,6 +42,7 @@ void runServer(std::vector<ServerConfig> &configs) {
         // 第三步：遍历所有 fd
         for (size_t i = 0; i < fds.size(); i++) {
             if (!(fds[i].revents & POLLIN))
+            //如果没有事件发生就继续监听
                 continue;
 
             // 检查是不是 CGI pipe 的 fd
@@ -55,7 +56,7 @@ void runServer(std::vector<ServerConfig> &configs) {
                     break;
                 }
             }
-
+ 
             if (is_cgi_fd) {
                 // 读取 CGI 输出
                 std::string output;
@@ -167,8 +168,8 @@ void runServer(std::vector<ServerConfig> &configs) {
                                     method_allowed = true;
                             }
                             if (!method_allowed) {
-                                std::string response = "HTTP/1.1 405 Method Not Allowed\r\n"
-                                                        "Content-Length: 0\r\n\r\n";
+                                std::string response = buildErrorResponse(405, 
+        clients[fds[i].fd].config->error_page);
                                 send(fds[i].fd, response.c_str(), response.size(), 0);
                                 clients[fds[i].fd].recv_buffer.clear();
                                 continue;
@@ -210,4 +211,3 @@ void runServer(std::vector<ServerConfig> &configs) {
         }
     }
 }
-

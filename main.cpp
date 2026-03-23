@@ -17,28 +17,33 @@ int main(int argc, char **argv) {
         return 1;
     }
 
-    // 1. 解析配置文件
-    ServerConfig config = parseConfig(argv[1]);
-
-    // 2. 初始化 server socket
-    Server server;
-    if (!server.setup("0.0.0.0", config.port)) {
-        std::cerr << "Error: server setup failed" << std::endl;
+    // 1. 解析所有 server{}
+    std::vector<ServerConfig> configs = parseConfigs(argv[1]);
+    if (configs.empty()) {
+        std::cerr << "Error: no server config found" << std::endl;
         return 1;
     }
-    config.server_fd = server.get_fd();
 
-    // 测试路由器
-    LocationConfig* loc = matchLocation(config, "/upload/photo.jpg");
-    if (loc)
-        std::cout << "matched: " << loc->path << std::endl;
-    else
-        std::cout << "no match" << std::endl;
+    // 2. 为每个 ServerConfig 启动一个 Server
+    std::vector<Server*> servers;
+    for (size_t i = 0; i < configs.size(); i++) {
+        Server* server = new Server();
+        if (!server->setup("0.0.0.0", configs[i].port)) {
+            std::cerr << "Error: server setup failed on port "
+                    << configs[i].port << std::endl;
+            delete server;
+            return 1;
+        }
+        configs[i].server_fd = server->get_fd();
+        servers.push_back(server);
+    }
 
-    // 3. 启动 poll() 循环
-    std::vector<ServerConfig> configs;
-    configs.push_back(config);
+    // 启动 poll()
     runServer(configs);
-    
+
+    // 清理
+    for (size_t i = 0; i < servers.size(); i++)
+        delete servers[i];
+
     return 0;
 }

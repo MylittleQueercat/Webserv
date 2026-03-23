@@ -2,6 +2,7 @@
 # define CLIENT
 
 # include <string>
+# include <unistd.h>
 # include "ConfigParser.hpp"
 
 struct ClientState {

@@ -13,6 +13,7 @@ struct HttpRequest {
     int         client_fd;
 };
 
+std::string buildErrorResponse(int code, const std::string &error_page_path);
 HttpRequest parseRequest(const std::string &raw);
 std::string handleRequest(const HttpRequest &req);
 
