@@ -30,7 +30,8 @@ struct ServerConfig {
     int                          port;        // 8080
     int                          server_fd;
     std::string                  root;        // "/var/www/html"
-    std::string                  error_page;  // "/404.html"
+    // std::string                  error_page;  // "/404.html"
+    std::map<int, std::string> error_pages;
     size_t                       max_body;    // 1048576 (1m)
     std::vector<LocationConfig>  locations;
 

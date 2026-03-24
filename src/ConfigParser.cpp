@@ -95,10 +95,15 @@ ServerConfig parseServer(std::ifstream &file) {
                 iss >> val;
                 config.root = trim(val);
             }
+            // else if (key == "error_page") {
+            //     std::string code, path;
+            //     iss >> code >> path;
+            //     config.error_page = trim(path);
+            // }
             else if (key == "error_page") {
                 std::string code, path;
                 iss >> code >> path;
-                config.error_page = trim(path);
+                config.error_pages[atoi(code.c_str())] = trim(path);
             }
             else if (key == "client_max_body_size") {
                 std::string val;

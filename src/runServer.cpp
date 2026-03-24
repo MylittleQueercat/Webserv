@@ -20,7 +20,21 @@ void runServer(std::vector<ServerConfig> &configs) {
     std::vector<struct pollfd> fds;
     std::set<int> server_fds;
     std::map<int, ClientState> clients;
+    
+    //server_fd → ServerConfig* 的映射
+    std::map<int, ServerConfig*> fd_to_config;
 
+    for (size_t i = 0; i < configs.size(); i++) {
+        struct pollfd pfd;
+        pfd.fd      = configs[i].server_fd;
+        pfd.events  = POLLIN;
+        pfd.revents = 0;
+        fds.push_back(pfd);
+        server_fds.insert(configs[i].server_fd);
+        
+        // ✅ 新增：记录映射关系
+        fd_to_config[configs[i].server_fd] = &configs[i];
+    }
     // 第一步：把所有 server_fd 放进 fds
     for (size_t i = 0; i < configs.size(); i++) {
         struct pollfd pfd;
@@ -103,10 +117,12 @@ void runServer(std::vector<ServerConfig> &configs) {
 
                 ClientState state;
                 state.fd = client_fd;
-                state.config = &configs[0];
+                state.config = fd_to_config[fds[i].fd];
+                //state.config = &configs[0];
                 clients[client_fd] = state; 
-
-                std::cout << "新客户端连接 fd=" << client_fd << std::endl;
+                std::cout << "新客户端连接 fd=" << client_fd 
+                            << " → port=" << state.config->port << std::endl;
+                //std::cout << "新客户端连接 fd=" << client_fd << std::endl;
 
             } else {
                 // 客户端发数据了
@@ -167,14 +183,27 @@ void runServer(std::vector<ServerConfig> &configs) {
                                 if (loc->methods[j] == req.method)
                                     method_allowed = true;
                             }
+        //                     if (!method_allowed) {
+        //                         std::string response = buildErrorResponse(405, 
+        // clients[fds[i].fd].config->error_page);
+        //                         send(fds[i].fd, response.c_str(), response.size(), 0);
+        //                         clients[fds[i].fd].recv_buffer.clear();
+        //                         continue;
+        //                     }
                             if (!method_allowed) {
-                                std::string response = buildErrorResponse(405, 
-        clients[fds[i].fd].config->error_page);
+                                std::string response = buildErrorResponse(405, *clients[fds[i].fd].config);
                                 send(fds[i].fd, response.c_str(), response.size(), 0);
                                 clients[fds[i].fd].recv_buffer.clear();
                                 continue;
                             }
-
+                            // if (!method_allowed) {
+                            //     std::cout << "DEBUG 405: method=" << req.method 
+                            //             << " path=" << req.path << std::endl;
+                            //     std::cout << "DEBUG loc methods: ";
+                            //     for (size_t j = 0; j < loc->methods.size(); j++)
+                            //         std::cout << "[" << loc->methods[j] << "] ";
+                            //     std::cout << std::endl;
+                            // }                                    
                             // 检查是否是 CGI 请求
                             if (!loc->cgi_ext.empty() && 
                                 req.path.find(loc->cgi_ext) != std::string::npos) {
@@ -198,7 +227,7 @@ void runServer(std::vector<ServerConfig> &configs) {
                             std::cout << buf << std::endl;
                             
                             // 返回HTTP 响应
-                            std::string response = handleRequest(req);
+                            std::string response = handleRequest(req, *clients[fds[i].fd].config, *loc);
                                 
                             send(fds[i].fd, response.c_str(), response.size(), 0);
                             

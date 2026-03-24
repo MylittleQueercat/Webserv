@@ -12,9 +12,9 @@ struct HttpRequest {
     std::string body;
     int         client_fd;
 };
-
-std::string buildErrorResponse(int code, const std::string &error_page_path);
+std::string buildErrorResponse(int code, const ServerConfig &config);
+//std::string buildErrorResponse(int code, const std::string &error_page_path);
 HttpRequest parseRequest(const std::string &raw);
-std::string handleRequest(const HttpRequest &req);
+std::string handleRequest(const HttpRequest &req, const ServerConfig &config, const LocationConfig &loc);
 
 #endif

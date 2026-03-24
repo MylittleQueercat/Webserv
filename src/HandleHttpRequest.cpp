@@ -13,31 +13,105 @@
 #include <linux/limits.h>
 #include <stdlib.h>
 
-std::string buildErrorResponse(int code, const std::string &error_page_path) {
-    // 1. 拼出错误页面路径
+std::string getStatusText(int code) {
+    if (code == 400) return "Bad Request";
+    if (code == 403) return "Forbidden";
+    if (code == 404) return "Not Found";
+    if (code == 405) return "Method Not Allowed";
+    if (code == 413) return "Content Too Large";
+    if (code == 500) return "Internal Server Error";
+    return "Error";
+}
+
+std::string buildErrorResponse(int code, const ServerConfig &config) {
+    std::string error_page_path = "";
+    if (config.error_pages.count(code))
+        error_page_path = config.error_pages.at(code);
     std::string filepath = "./www" + error_page_path;
-    
-    // 2. 尝试读文件
+
+    std::ostringstream oss;
+    oss << code;
+    std::string status = "HTTP/1.1 " + oss.str() + " " + getStatusText(code) + "\r\n";
+
     std::ifstream file(filepath.c_str());
     if (file.is_open()) {
         std::string body((std::istreambuf_iterator<char>(file)),
                           std::istreambuf_iterator<char>());
-        std::ostringstream oss;
-        oss << code;
         std::ostringstream len;
         len << body.size();
-        return "HTTP/1.1 " + oss.str() + " Error\r\n"
+        return status +
                "Content-Type: text/html\r\n"
                "Content-Length: " + len.str() + "\r\n"
                "\r\n" + body;
     }
-    
-    // 3. 文件不存在，返回空响应
-    std::ostringstream oss;
-    oss << code;
-    return "HTTP/1.1 " + oss.str() + " Error\r\n"
-           "Content-Length: 0\r\n\r\n";
+    return status + "Content-Length: 0\r\n\r\n";
 }
+
+// std::string getStatusText(int code) {
+//     if (code == 400) return "Bad Request";
+//     if (code == 403) return "Forbidden";
+//     if (code == 404) return "Not Found";
+//     if (code == 405) return "Method Not Allowed";
+//     if (code == 413) return "Content Too Large";
+//     if (code == 500) return "Internal Server Error";
+//     return "Error";
+// }
+
+// std::string buildErrorResponse(int code, const ServerConfig &config) {
+//     // 1. 拼出错误页面路径
+    
+//     std::string error_page_path = "";
+//     if (config.error_pages.count(code))
+//         error_page_path = config.error_pages.at(code);
+    
+//     std::string filepath = "./www" + error_page_path;
+    
+//     // 2. 尝试读文件
+//     std::ifstream file(filepath.c_str());
+//     if (file.is_open()) {
+//         std::string body((std::istreambuf_iterator<char>(file)),
+//                           std::istreambuf_iterator<char>());
+//         std::ostringstream oss;
+//         oss << code;
+//         std::ostringstream len;
+//         len << body.size();
+//         return "HTTP/1.1 " + oss.str() + " Error\r\n"
+//                "Content-Type: text/html\r\n"
+//                "Content-Length: " + len.str() + "\r\n"
+//                "\r\n" + body;
+//     }
+    
+//     // 3. 文件不存在，返回空响应
+//     std::ostringstream oss;
+//     oss << code;
+//     return "HTTP/1.1 " + oss.str() + " Error\r\n"
+//            "Content-Length: 0\r\n\r\n";
+// }
+// std::string buildErrorResponse(int code, const std::string &error_page_path) {
+//     // 1. 拼出错误页面路径
+//     std::string filepath = "./www" + error_page_path;
+    
+//     // 2. 尝试读文件
+//     std::ifstream file(filepath.c_str());
+//     if (file.is_open()) {
+//         std::string body((std::istreambuf_iterator<char>(file)),
+//                           std::istreambuf_iterator<char>());
+//         std::ostringstream oss;
+//         oss << code;
+//         std::ostringstream len;
+//         len << body.size();
+//         return "HTTP/1.1 " + oss.str() + " Error\r\n"
+//                "Content-Type: text/html\r\n"
+//                "Content-Length: " + len.str() + "\r\n"
+//                "\r\n" + body;
+//     }
+    
+//     // 3. 文件不存在，返回空响应
+//     std::ostringstream oss;
+//     oss << code;
+//     return "HTTP/1.1 " + oss.str() + " Error\r\n"
+//            "Content-Length: 0\r\n\r\n";
+// }
 
 std::string getContentType(const std::string &filepath)
 {
@@ -56,24 +130,26 @@ std::string getContentType(const std::string &filepath)
 	return "application/octet-stream";
 }
 
-std::string handleGET(const HttpRequest &req) 
+std::string handleGET(const HttpRequest &req, const ServerConfig &config, const LocationConfig &loc)
 {
-    std::string filepath = "./www" + req.path;
+    (void)loc;
+
+    std::string filepath = config.root + req.path;
     if (filepath[filepath.size() - 1] == '/')
         filepath += "index.html";
 
     char resolved[PATH_MAX];
     if (realpath(filepath.c_str(), resolved) == NULL)
-        return buildErrorResponse(404, "/errors/404.html");  // ← 改
+        return buildErrorResponse(404, config);  // ← 改
 
     char root[PATH_MAX];
-    realpath("./www/", root);
+    realpath(config.root.c_str(), root);
     if (std::string(resolved).find(root) != 0)
-        return buildErrorResponse(403, "/errors/403.html");  // ← 改
+        return buildErrorResponse(403, config);  // ← 改
 
     std::ifstream file(resolved);
     if (!file.is_open())
-        return buildErrorResponse(404, "/errors/404.html");  // ← 改
+        return buildErrorResponse(404, config);  // ← 改
 
     std::string body((std::istreambuf_iterator<char>(file)),
                       std::istreambuf_iterator<char>());
@@ -87,18 +163,22 @@ std::string handleGET(const HttpRequest &req)
     return response.str();
 }
 
-std::string handlePOST(const HttpRequest &req)
+std::string handlePOST(const HttpRequest &req, const ServerConfig &config, const LocationConfig &loc)
 {
+    (void)config;
+
+
+    std::cout << "DEBUG upload_store: [" << loc.upload_store << "]" << std::endl;
     if (req.body.empty())
-        return buildErrorResponse(400, "/errors/400.html");  // ← 改
+        return buildErrorResponse(400, config);  // ← 改
 
     if (req.body.size() > 1 * 1024 * 1024)
-        return buildErrorResponse(413, "/errors/413.html");  // ← 改
+        return buildErrorResponse(413, config);  // ← 改
 
-    std::string filepath = "./uploads/uploaded_file";
+    std::string filepath = loc.upload_store + "/uploaded_file";
     std::ofstream outfile(filepath.c_str());
     if (!outfile.is_open())
-        return buildErrorResponse(500, "/errors/500.html");  // ← 改
+        return buildErrorResponse(500, config);  // ← 改
 
     outfile.write(req.body.c_str(), req.body.size());
     outfile.close();
@@ -106,35 +186,37 @@ std::string handlePOST(const HttpRequest &req)
            "Content-Length: 0\r\n\r\n";
 }
 
-std::string handleDELETE(const HttpRequest &req)
+std::string handleDELETE(const HttpRequest &req, const ServerConfig &config, const LocationConfig &loc)
 {
-    std::string filepath = "./uploads" + req.path;
+    (void)config;
+
+    std::string filepath = loc.upload_store + req.path;
     char resolved[PATH_MAX];
     if (realpath(filepath.c_str(), resolved) == NULL)
-        return buildErrorResponse(404, "/errors/404.html");  // ← 改
+        return buildErrorResponse(404, config);  // ← 改
 
     char root[PATH_MAX];
-    realpath("./uploads", root);
+    realpath(loc.upload_store.c_str(), root);
     if (std::string(resolved).find(root) != 0)
-        return buildErrorResponse(403, "/errors/403.html");  // ← 改
+        return buildErrorResponse(403, config);  // ← 改
 
     if (remove(resolved) == 0)
         return "HTTP/1.1 204 No Content\r\n"
                "Content-Length: 0\r\n\r\n";
     else
-        return buildErrorResponse(404, "/errors/404.html");  // ← 改
+        return buildErrorResponse(404, config);  // ← 改
 }
 
-std::string handleRequest(const HttpRequest &req)
+std::string handleRequest(const HttpRequest &req, const ServerConfig &config, const LocationConfig &loc)
 {
     if (req.method == "GET")
-        return handleGET(req);
+        return handleGET(req, config, loc);
     else if (req.method == "POST")
-        return handlePOST(req);
+        return handlePOST(req, config, loc);
     else if (req.method == "DELETE")
-        return handleDELETE(req);
+        return handleDELETE(req, config, loc);
     else
-        return buildErrorResponse(405, "/errors/405.html");  // ← 改
+        return buildErrorResponse(405, config);  // ← 改
 }
 
 // std::string handleGET(const HttpRequest &req) 
