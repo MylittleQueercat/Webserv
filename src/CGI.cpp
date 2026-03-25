@@ -23,7 +23,8 @@ void startCGI(const HttpRequest &req, const LocationConfig &loc, ClientState &cl
         close(input_pipe[0]);
         close(output_pipe[1]);
 
-        std::string scriptpath = "./www" + req.path;
+        //std::string scriptpath = "./www" + req.path;
+        std::string scriptpath = loc.root + req.path;
         char *args[3];
         args[0] = (char*)"python3";
         args[1] = (char*)scriptpath.c_str();

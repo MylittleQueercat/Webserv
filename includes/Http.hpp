@@ -3,6 +3,7 @@
 
 # include <string>
 # include <map>
+# include "ConfigParser.hpp"
 
 struct HttpRequest {
     std::string method;   // "GET"
