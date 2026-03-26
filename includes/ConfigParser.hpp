@@ -24,6 +24,10 @@ struct LocationConfig {
     bool                     autoindex;    // true/false affiche la liste des fichiers ou pas?
     std::string              upload_store; // "/tmp/uploads" Le dossier où les fichiers envoyés par le client seront sauvegardés
     std::string              cgi_ext;
+    int                      redirect_code;
+    std::string              redirect_url;
+
+    LocationConfig() : autoindex(false), redirect_code(0) {} 
 };
 
 struct ServerConfig {

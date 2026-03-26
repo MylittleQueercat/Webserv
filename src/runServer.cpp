@@ -298,7 +298,12 @@ void runServer(std::vector<ServerConfig> &configs) {
             if (!c.is_cgi) continue;
             if (c.cgi_last_activity == 0) continue;
 
-            if (difftime(time(NULL), c.cgi_last_activity) > 60) {
+            if (difftime(time(NULL), c.cgi_last_activity) > 10) {
+
+                std::cerr << "now=" << time(NULL) 
+              << " last=" << c.cgi_last_activity 
+              << " diff=" << difftime(time(NULL), c.cgi_last_activity) << std::endl;
+
                 std::cerr << "CGI timeout: pid=" << c.cgi_pid << std::endl;
 
                 kill(c.cgi_pid, SIGKILL);
@@ -324,7 +329,7 @@ void runServer(std::vector<ServerConfig> &configs) {
 
         // ── 遍历所有 fd ───────────────────────────────────────────────────
         for (size_t i = 0; i < fds.size(); i++) {
-            if (!(fds[i].revents & POLLIN))
+            if (!(fds[i].revents & POLLIN) && !(fds[i].revents & POLLHUP))
                 continue;
 
             // ── 判断是否是 CGI pipe fd ────────────────────────────────────
@@ -494,6 +499,18 @@ void runServer(std::vector<ServerConfig> &configs) {
                     continue;
                 }
 
+                if (loc->redirect_code != 0 && !loc->redirect_url.empty()) {
+                    std::ostringstream oss;
+                    oss << loc->redirect_code;
+                    std::string status_text = (loc->redirect_code == 301) ? "Moved Permanently" : "Found";
+                    std::string resp = "HTTP/1.1 " + oss.str() + " " + status_text + "\r\n"
+                                    "Location: " + loc->redirect_url + "\r\n"
+                                    "Content-Length: 0\r\n\r\n";
+                    send(fds[i].fd, resp.c_str(), resp.size(), 0);
+                    clients[fds[i].fd].recv_buffer.clear();
+                    continue;
+                }
+
                 // 405 方法不允许
                 bool method_allowed = false;
                 for (size_t j = 0; j < loc->methods.size(); j++) {
@@ -511,6 +528,9 @@ void runServer(std::vector<ServerConfig> &configs) {
                 if (!loc->cgi_ext.empty() &&
                     req.path.find(loc->cgi_ext) != std::string::npos) {
                     startCGI(req, *loc, clients[fds[i].fd]);
+
+                    int cgi_flags = fcntl(clients[fds[i].fd].cgi_output_fd, F_GETFL, 0);
+                    fcntl(clients[fds[i].fd].cgi_output_fd, F_SETFL, cgi_flags | O_NONBLOCK);
 
                     // 把 cgi_output_fd 加进 poll 监听
                     struct pollfd cgi_pfd;

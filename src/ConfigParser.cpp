@@ -59,6 +59,12 @@ LocationConfig parseLocation(std::ifstream &file, const std::string &path) {
             iss >> val;
             loc.cgi_ext = trim(val);
         }
+        else if (key == "return") {
+            std::string code, url;
+            iss >> code >> url;
+            loc.redirect_code = atoi(code.c_str());
+            loc.redirect_url  = trim(url);
+        }
     }
     return loc;
 }

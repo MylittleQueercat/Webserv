@@ -12,6 +12,8 @@
 #include "../includes/Http.hpp"
 #include <linux/limits.h>
 #include <stdlib.h>
+#include <dirent.h>
+#include <sys/stat.h>
 
 std::string getStatusText(int code) {
     if (code == 400) return "Bad Request";
@@ -33,18 +35,27 @@ std::string buildErrorResponse(int code, const ServerConfig &config) {
     oss << code;
     std::string status = "HTTP/1.1 " + oss.str() + " " + getStatusText(code) + "\r\n";
 
-    std::ifstream file(filepath.c_str());
-    if (file.is_open()) {
-        std::string body((std::istreambuf_iterator<char>(file)),
-                          std::istreambuf_iterator<char>());
-        std::ostringstream len;
-        len << body.size();
-        return status +
-               "Content-Type: text/html\r\n"
-               "Content-Length: " + len.str() + "\r\n"
-               "\r\n" + body;
+    if (config.error_pages.count(code)) {
+        std::ifstream file(filepath.c_str());
+        if (file.is_open()) {
+            std::string body((std::istreambuf_iterator<char>(file)),
+                            std::istreambuf_iterator<char>());
+            std::ostringstream len;
+            len << body.size();
+            return status +
+                "Content-Type: text/html\r\n"
+                "Content-Length: " + len.str() + "\r\n"
+                "\r\n" + body;
+        }
     }
-    return status + "Content-Length: 0\r\n\r\n";
+    // ✅ 文件打不开，返回内置默认页面
+    std::string default_body = "<html><body><h1>" + oss.str() + " " + getStatusText(code) + "</h1></body></html>";
+    std::ostringstream default_len;
+    default_len << default_body.size();
+    return status +
+           "Content-Type: text/html\r\n"
+           "Content-Length: " + default_len.str() + "\r\n"
+           "\r\n" + default_body;
 }
 
 // std::string getStatusText(int code) {
@@ -130,13 +141,57 @@ std::string getContentType(const std::string &filepath)
 	return "application/octet-stream";
 }
 
+#include <dirent.h>
+#include <sys/stat.h>
+
+std::string buildAutoindex(const std::string &url_path,
+                            const std::string &dir_path,
+                            const ServerConfig &config)
+{
+    DIR *dir = opendir(dir_path.c_str());
+    if (!dir)
+        return buildErrorResponse(404, config);
+
+    std::string body = "<html><head><title>Index of " + url_path + "</title></head>\n"
+                       "<body><h1>Index of " + url_path + "</h1><hr><pre>\n";
+
+    if (url_path != "/")
+        body += "<a href=\"../\">../</a>\n";
+
+    struct dirent *entry;
+    while ((entry = readdir(dir)) != NULL) {
+        std::string name = entry->d_name;
+        if (name == "." || name == "..")
+            continue;
+
+        std::string full_path = dir_path + name;
+        struct stat st;
+        if (stat(full_path.c_str(), &st) == 0 && S_ISDIR(st.st_mode))
+            name += "/";
+
+        body += "<a href=\"" + name + "\">" + name + "</a>\n";
+    }
+    closedir(dir);
+    body += "</pre><hr></body></html>";
+
+    std::ostringstream oss;
+    oss << body.size();
+    return "HTTP/1.1 200 OK\r\n"
+           "Content-Type: text/html\r\n"
+           "Content-Length: " + oss.str() + "\r\n"
+           "\r\n" + body;
+}
+
 std::string handleGET(const HttpRequest &req, const ServerConfig &config, const LocationConfig &loc)
 {
-    (void)loc;
-
     std::string filepath = config.root + req.path;
-    if (filepath[filepath.size() - 1] == '/')
-        filepath += "index.html";
+    if (filepath[filepath.size() - 1] == '/') {
+        if (loc.autoindex) {
+            return buildAutoindex(req.path, filepath, config);
+        }
+        std::string index = loc.index.empty() ? "index.html" : loc.index;
+        filepath += index;
+    }
 
     char resolved[PATH_MAX];
     if (realpath(filepath.c_str(), resolved) == NULL)
@@ -144,8 +199,13 @@ std::string handleGET(const HttpRequest &req, const ServerConfig &config, const 
 
     char root[PATH_MAX];
     realpath(config.root.c_str(), root);
-    if (std::string(resolved).find(root) != 0)
-        return buildErrorResponse(403, config);  // ← 改
+    std::string root_str(root);
+    if (root_str[root_str.size() - 1] != '/')
+        root_str += '/';
+    std::string resolved_str(resolved);
+    if (resolved_str != root_str.substr(0, root_str.size() - 1) &&
+        resolved_str.find(root_str) != 0)
+        return buildErrorResponse(403, config);
 
     std::ifstream file(resolved);
     if (!file.is_open())
@@ -209,6 +269,15 @@ std::string handleDELETE(const HttpRequest &req, const ServerConfig &config, con
 
 std::string handleRequest(const HttpRequest &req, const ServerConfig &config, const LocationConfig &loc)
 {
+    if (loc.redirect_code != 0 && !loc.redirect_url.empty()) {
+        std::ostringstream oss;
+        oss << loc.redirect_code;
+        std::string status_text = (loc.redirect_code == 301) ? "Moved Permanently" : "Found";
+        return "HTTP/1.1 " + oss.str() + " " + status_text + "\r\n"
+               "Location: " + loc.redirect_url + "\r\n"
+               "Content-Length: 0\r\n"
+               "\r\n";
+    }
     if (req.method == "GET")
         return handleGET(req, config, loc);
     else if (req.method == "POST")

@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <sys/wait.h>
 #include <sstream>
+#include <fcntl.h>
 
 void startCGI(const HttpRequest &req, const LocationConfig &loc, ClientState &client) {
     (void)loc;
@@ -23,8 +24,15 @@ void startCGI(const HttpRequest &req, const LocationConfig &loc, ClientState &cl
         close(input_pipe[0]);
         close(output_pipe[1]);
 
-        //std::string scriptpath = "./www" + req.path;
-        std::string scriptpath = loc.root + req.path;
+         // ✅ 加这几行，把 stderr 写到文件
+        int err_fd = open("/tmp/cgi_err.txt", O_WRONLY|O_CREAT|O_TRUNC, 0644);
+        if (err_fd >= 0) {
+            dup2(err_fd, STDERR_FILENO);
+            close(err_fd);
+        }
+
+        std::string scriptpath = "./www" + req.path;
+        // std::string scriptpath = loc.root + req.path;
         char *args[3];
         args[0] = (char*)"python3";
         args[1] = (char*)scriptpath.c_str();
