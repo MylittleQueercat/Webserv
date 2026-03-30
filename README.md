@@ -1,4 +1,4 @@
-*This project has been created as part of the 42 curriculum by kongkong, lijie.*
+*This project has been created as part of the 42 curriculum by hguo, jili.*
 
 # Webserv
 
