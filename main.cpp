@@ -32,10 +32,15 @@ int main(int argc, char **argv) {
             std::cerr << "Error: server setup failed on port "
                     << configs[i].port << std::endl;
             delete server;
-            return 1;
+            continue;
         }
         configs[i].server_fd = server->get_fd();
         servers.push_back(server);
+    }
+
+    if (servers.empty()) {
+        std::cerr << "Error: no server could be started" << std::endl;
+        return 1;
     }
 
     // 启动 poll()

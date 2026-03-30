@@ -4,7 +4,7 @@
 import time
 import sys
 
-time.sleep(5)  # sleep longer than your 60s timeout
+time.sleep(15)  # sleep longer than your 60s timeout
 
 print("Content-Type: text/html\r")
 print("\r")

@@ -24,17 +24,27 @@ void startCGI(const HttpRequest &req, const LocationConfig &loc, ClientState &cl
         close(input_pipe[0]);
         close(output_pipe[1]);
 
-         // ✅ 加这几行，把 stderr 写到文件
-        int err_fd = open("/tmp/cgi_err.txt", O_WRONLY|O_CREAT|O_TRUNC, 0644);
-        if (err_fd >= 0) {
-            dup2(err_fd, STDERR_FILENO);
-            close(err_fd);
+        std::string scriptpath = "./www" + req.path;
+
+        // ✅ 根据扩展名选解释器
+        std::string interpreter;
+        std::string interpreter_path;
+        if (req.path.find(".py") != std::string::npos) {
+            interpreter      = "python3";
+            interpreter_path = "/usr/bin/python3";
+        } else if (req.path.find(".php") != std::string::npos) {
+            interpreter      = "php";
+            interpreter_path = "/usr/bin/php";
+        } else if (req.path.find(".sh") != std::string::npos) {
+            interpreter      = "bash";
+            interpreter_path = "/bin/bash";
+        } else {
+            exit(1);  // 不支持的类型
         }
 
-        std::string scriptpath = "./www" + req.path;
         // std::string scriptpath = loc.root + req.path;
         char *args[3];
-        args[0] = (char*)"python3";
+        args[0] = (char*)interpreter.c_str();
         args[1] = (char*)scriptpath.c_str();
         args[2] = NULL;
 
@@ -47,7 +57,7 @@ void startCGI(const HttpRequest &req, const LocationConfig &loc, ClientState &cl
         env[2] = (char*)query.c_str();
         env[3] = NULL;
 
-        execve("/usr/bin/python3", args, env);
+        execve(interpreter_path.c_str(), args, env);
         exit(1);
     }
     else {

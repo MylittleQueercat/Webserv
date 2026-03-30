@@ -250,7 +250,8 @@ std::string handleDELETE(const HttpRequest &req, const ServerConfig &config, con
 {
     (void)config;
 
-    std::string filepath = loc.upload_store + req.path;
+    std::string filename = req.path.substr(req.path.rfind('/'));
+    std::string filepath = loc.upload_store + filename;
     char resolved[PATH_MAX];
     if (realpath(filepath.c_str(), resolved) == NULL)
         return buildErrorResponse(404, config);  // ← 改

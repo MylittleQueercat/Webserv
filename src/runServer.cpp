@@ -1,246 +1,3 @@
-// #include <poll.h>
-// #include <vector>
-// #include <iostream>
-// #include <unistd.h>
-// #include <fstream>
-// #include <set>
-// #include <sstream>
-// #include <sys/wait.h>
-// #include "../includes/Server.hpp"
-// #include "../includes/ConfigParser.hpp"
-// #include "../includes/Client.hpp"
-// #include "../includes/Http.hpp"
-// #include "../includes/CGI.hpp"
-
-// ClientState::ClientState() : fd(-1), headers_done(false), 
-//                               content_length(0), config(NULL),
-//                               cgi_pid(-1), cgi_output_fd(-1), is_cgi(false){}
-
-// void runServer(std::vector<ServerConfig> &configs) {
-//     std::vector<struct pollfd> fds;
-//     std::set<int> server_fds;
-//     std::map<int, ClientState> clients;
-    
-//     //server_fd → ServerConfig* 的映射
-//     std::map<int, ServerConfig*> fd_to_config;
-
-//     for (size_t i = 0; i < configs.size(); i++) {
-//         struct pollfd pfd;
-//         pfd.fd      = configs[i].server_fd;
-//         pfd.events  = POLLIN;
-//         pfd.revents = 0;
-//         fds.push_back(pfd);
-//         server_fds.insert(configs[i].server_fd);
-        
-//         // ✅ 新增：记录映射关系
-//         fd_to_config[configs[i].server_fd] = &configs[i];
-//     }
-//     // 第一步：把所有 server_fd 放进 fds
-//     for (size_t i = 0; i < configs.size(); i++) {
-//         struct pollfd pfd;
-//         pfd.fd      = configs[i].server_fd;
-//         pfd.events  = POLLIN;
-//         pfd.revents = 0;
-//         fds.push_back(pfd);
-//         server_fds.insert(configs[i].server_fd);
-//     }
-
-//     // 第二步：事件循环
-//     while (true) {
-//         int ready = poll(&fds[0], fds.size(), -1);
-//         if (ready < 0) {
-//             std::cerr << "poll() failed" << std::endl;
-//             break;
-//         }
-
-//         // 第三步：遍历所有 fd
-//         for (size_t i = 0; i < fds.size(); i++) {
-//             if (!(fds[i].revents & POLLIN))
-//             //如果没有事件发生就继续监听
-//                 continue;
-
-//             // 检查是不是 CGI pipe 的 fd
-//             bool is_cgi_fd = false;
-//             int cgi_client_fd = -1;
-//             for (std::map<int, ClientState>::iterator it = clients.begin(); 
-//                 it != clients.end(); ++it) {
-//                 if (it->second.cgi_output_fd == fds[i].fd) {
-//                     is_cgi_fd = true;
-//                     cgi_client_fd = it->second.fd;
-//                     break;
-//                 }
-//             }
- 
-//             if (is_cgi_fd) {
-//                 // 读取 CGI 输出
-//                 std::string output;
-//                 char buffer[4096];
-//                 int bytes;
-//                 while ((bytes = read(fds[i].fd, buffer, sizeof(buffer))) > 0)
-//                     output += std::string(buffer, bytes);
-//                 close(fds[i].fd);
-//                 fds.erase(fds.begin() + i);
-//                 i--;
-
-//                 // 等次进程结束
-//                 waitpid(clients[cgi_client_fd].cgi_pid, NULL, 0);
-//                 clients[cgi_client_fd].is_cgi = false;
-
-//                 // 构建响应
-//                 std::string body_only = output.substr(output.find("\r\n\r\n") + 4);
-//                 std::string headers_only = output.substr(0, output.find("\r\n\r\n"));
-//                 std::ostringstream oss;
-//                 oss << body_only.size();
-
-//                 std::string response = "HTTP/1.1 200 OK\r\n";
-//                 response += "Connection: close\r\n";
-//                 response += headers_only + "\r\n";
-//                 response += "Content-Length: " + oss.str() + "\r\n";
-//                 response += "\r\n";
-//                 response += body_only;
-
-//                 send(cgi_client_fd, response.c_str(), response.size(), 0);
-//                 continue;
-//             }
-
-//             if (server_fds.count(fds[i].fd)) {
-//                 // 新客户端连进来
-//                 int client_fd = accept(fds[i].fd, NULL, NULL);
-//                 int flags = fcntl(client_fd, F_GETFL, 0);
-//                 fcntl(client_fd, F_SETFL, flags | O_NONBLOCK);
-
-//                 struct pollfd client_pfd;
-//                 client_pfd.fd      = client_fd;
-//                 client_pfd.events  = POLLIN;
-//                 client_pfd.revents = 0;
-//                 fds.push_back(client_pfd);
-
-//                 ClientState state;
-//                 state.fd = client_fd;
-//                 state.config = fd_to_config[fds[i].fd];
-//                 //state.config = &configs[0];
-//                 clients[client_fd] = state; 
-//                 std::cout << "新客户端连接 fd=" << client_fd 
-//                             << " → port=" << state.config->port << std::endl;
-//                 //std::cout << "新客户端连接 fd=" << client_fd << std::endl;
-
-//             } else {
-//                 // 客户端发数据了
-//                 char buffer[4096];
-//                 int bytes = recv(fds[i].fd, buffer, sizeof(buffer), 0);
-
-//                 if (bytes <= 0) {
-//                     std::cout << "客户端断开 fd=" << fds[i].fd << std::endl;
-//                     close(fds[i].fd);
-//                     clients.erase(fds[i].fd);
-//                     fds.erase(fds.begin() + i);
-//                     i--;
-//                 }
-//                 else {
-//                     clients[fds[i].fd].recv_buffer += std::string(buffer, bytes);
-                    
-//                     // Get client's recv_buffer
-//                     std::string &buf = clients[fds[i].fd].recv_buffer;
-//                     // Check if request is full
-//                     bool request_complete = false;
-//                     if (buf.find("\r\n\r\n") != std::string::npos) {
-//                         if (buf.find("Transfer-Encoding: chunked") != std::string::npos) {
-//                             if (buf.find("0\r\n\r\n") != std::string::npos)
-//                                 request_complete = true;
-//                         }
-//                         else
-//                             request_complete = true;
-//                             //一直等待request完整再继续
-
-//                         if (request_complete) {
-//                             //Parse raw buffer into HttpRequest struct
-//                             HttpRequest req = parseRequest(buf);
-
-//                             // Check if body exceeds max_body -> if yes return 413
-//                             if (req.body.size() > clients[fds[i].fd].config->max_body) {
-//                                 std::string response = 
-//                                     "HTTP/1.1 413 Content TOO Large\r\n"
-//                                     "Content-Length: 0\r\n"
-//                                     "\r\n";
-//                                 send(fds[i].fd, response.c_str(), response.size(), 0);
-//                                 clients[fds[i].fd].recv_buffer.clear();
-//                                 continue;
-//                             }
-
-//                             //用这个客户端的服务器配置和请求路径，去找最匹配的 location
-//                             LocationConfig* loc = matchLocation(*clients[fds[i].fd].config, req.path);
-//                             if (!loc) {
-//                                 std::string response = "HTTP/1.1 404 Not Found\r\n"
-//                                                         "Content-Length: 0\r\n\r\n";
-//                                 send(fds[i].fd, response.c_str(), response.size(), 0);
-//                                 clients[fds[i].fd].recv_buffer.clear();
-//                                 continue;
-//                             }
-
-//                             //405检查(路由匹配失败/方法不允许就返回405)
-//                             bool method_allowed = false;
-//                             for (size_t j = 0; j < loc->methods.size(); j++) {
-//                                 if (loc->methods[j] == req.method)
-//                                     method_allowed = true;
-//                             }
-//         //                     if (!method_allowed) {
-//         //                         std::string response = buildErrorResponse(405, 
-//         // clients[fds[i].fd].config->error_page);
-//         //                         send(fds[i].fd, response.c_str(), response.size(), 0);
-//         //                         clients[fds[i].fd].recv_buffer.clear();
-//         //                         continue;
-//         //                     }
-//                             if (!method_allowed) {
-//                                 std::string response = buildErrorResponse(405, *clients[fds[i].fd].config);
-//                                 send(fds[i].fd, response.c_str(), response.size(), 0);
-//                                 clients[fds[i].fd].recv_buffer.clear();
-//                                 continue;
-//                             }
-//                             // if (!method_allowed) {
-//                             //     std::cout << "DEBUG 405: method=" << req.method 
-//                             //             << " path=" << req.path << std::endl;
-//                             //     std::cout << "DEBUG loc methods: ";
-//                             //     for (size_t j = 0; j < loc->methods.size(); j++)
-//                             //         std::cout << "[" << loc->methods[j] << "] ";
-//                             //     std::cout << std::endl;
-//                             // }                                    
-//                             // 检查是否是 CGI 请求
-//                             if (!loc->cgi_ext.empty() && 
-//                                 req.path.find(loc->cgi_ext) != std::string::npos) {
-//                                 // std::string response = executeCGI(req, *loc);
-//                                 // send(fds[i].fd, response.c_str(), response.size(), 0);
-//                                 startCGI(req, *loc, clients[fds[i].fd]);
-//                                 struct pollfd cgi_pfd;
-//                                 cgi_pfd.fd      = clients[fds[i].fd].cgi_output_fd;
-//                                 cgi_pfd.events  = POLLIN;
-//                                 cgi_pfd.revents = 0;
-//                                 fds.push_back(cgi_pfd);
-//                                 clients[fds[i].fd].recv_buffer.clear();
-//                                 continue;
-//                             }
-//                             std::cout << "method: " << req.method << std::endl;
-//                             std::cout << "path: " << req.path << std::endl;
-//                             std::cout << "body: " << req.body << std::endl;
-
-//                             // 找到空行！请求头部完整了
-//                             std::cout << "收到完整请求：" << std::endl;
-//                             std::cout << buf << std::endl;
-                            
-//                             // 返回HTTP 响应
-//                             std::string response = handleRequest(req, *clients[fds[i].fd].config, *loc);
-                                
-//                             send(fds[i].fd, response.c_str(), response.size(), 0);
-                            
-//                             // clear buffer after processing
-//                             clients[fds[i].fd].recv_buffer.clear();
-//                         }
-//                     }
-//                 }
-//             }
-//         }
-//     }
-// }
-
 #include <poll.h>
 #include <vector>
 #include <iostream>
@@ -250,14 +7,25 @@
 #include <sstream>
 #include <sys/wait.h>
 #include <fcntl.h>
-#include <cerrno>
 #include <ctime>
 #include <csignal>
+#include <cstdlib>  // rand()
+#include <sstream>
 #include "../includes/Server.hpp"
 #include "../includes/ConfigParser.hpp"
 #include "../includes/Client.hpp"
 #include "../includes/Http.hpp"
 #include "../includes/CGI.hpp"
+
+// 全局 session 存储
+std::map<std::string, std::string> sessions;  // session_id → username
+
+std::string generateSessionId() {
+    std::ostringstream oss;
+    for (int i = 0; i < 16; i++)
+        oss << std::hex << (rand() % 16);
+    return oss.str();
+}
 
 ClientState::ClientState() : fd(-1), headers_done(false),
                               content_length(0), config(NULL),
@@ -395,25 +163,19 @@ void runServer(std::vector<ServerConfig> &configs) {
                     cgi_client->cgi_output.clear();
                 }
                 else {
-                    // bytes < 0
-                    if (errno == EAGAIN || errno == EWOULDBLOCK) {
-                        // 非阻塞暂时没数据，等下一轮
-                    }
-                    else {
-                        // 真正的读取错误
-                        close(fds[i].fd);
-                        fds.erase(fds.begin() + i);
-                        i--;
+                    // 真正的读取错误
+                    close(fds[i].fd);
+                    fds.erase(fds.begin() + i);
+                    i--;
 
-                        kill(cgi_client->cgi_pid, SIGKILL);
-                        waitpid(cgi_client->cgi_pid, NULL, WNOHANG);
-                        cgi_client->is_cgi        = false;
-                        cgi_client->cgi_output_fd = -1;
+                    kill(cgi_client->cgi_pid, SIGKILL);
+                    waitpid(cgi_client->cgi_pid, NULL, WNOHANG);
+                    cgi_client->is_cgi        = false;
+                    cgi_client->cgi_output_fd = -1;
 
-                        std::string err = "HTTP/1.1 500 Internal Server Error\r\n"
-                                          "Content-Length: 0\r\n\r\n";
-                        send(cgi_client->fd, err.c_str(), err.size(), 0);
-                    }
+                    std::string err = "HTTP/1.1 500 Internal Server Error\r\n"
+                                        "Content-Length: 0\r\n\r\n";
+                    send(cgi_client->fd, err.c_str(), err.size(), 0);
                 }
                 continue; // CGI 处理完，跳过后面的逻辑
             }
@@ -462,6 +224,26 @@ void runServer(std::vector<ServerConfig> &configs) {
                 clients[fds[i].fd].recv_buffer += std::string(buf, bytes);
                 std::string& rbuf = clients[fds[i].fd].recv_buffer;
 
+                // 收到请求头就先检查 Content-Length
+                if (rbuf.find("\r\n\r\n") != std::string::npos) {
+                    size_t cl_pos = rbuf.find("Content-Length: ");
+                    if (cl_pos != std::string::npos) {
+                        size_t cl_end = rbuf.find("\r\n", cl_pos);
+                        size_t content_length = atoi(rbuf.substr(cl_pos + 16, cl_end - cl_pos - 16).c_str());
+                        
+                        // ✅ 只看 Content-Length 就够了，不用等 body 收完
+                        if (content_length > clients[fds[i].fd].config->max_body) {
+                            std::string resp = buildErrorResponse(413, *clients[fds[i].fd].config);
+                            send(fds[i].fd, resp.c_str(), resp.size(), 0);
+                            close(fds[i].fd);
+                            clients.erase(fds[i].fd);
+                            fds.erase(fds.begin() + i);
+                            i--;
+                            continue;
+                        }
+                    }
+                }
+
                 // 判断请求是否完整
                 if (rbuf.find("\r\n\r\n") == std::string::npos)
                     continue;
@@ -470,8 +252,21 @@ void runServer(std::vector<ServerConfig> &configs) {
                 if (rbuf.find("Transfer-Encoding: chunked") != std::string::npos) {
                     if (rbuf.find("0\r\n\r\n") != std::string::npos)
                         request_complete = true;
-                } else {
-                    request_complete = true;
+                } 
+                else {
+                    // ✅ 检查 body 是否完整收到
+                    size_t header_end = rbuf.find("\r\n\r\n");
+                    size_t cl_pos = rbuf.find("Content-Length: ");
+                    if (cl_pos == std::string::npos) {
+                        request_complete = true;  // 没有 body
+                    } 
+                    else {
+                        size_t cl_end = rbuf.find("\r\n", cl_pos);
+                        size_t content_length = atoi(rbuf.substr(cl_pos + 16, cl_end - cl_pos - 16).c_str());
+                        size_t body_received = rbuf.size() - (header_end + 4);
+                        if (body_received >= content_length)
+                            request_complete = true;
+                    }
                 }
 
                 if (!request_complete)
@@ -480,16 +275,118 @@ void runServer(std::vector<ServerConfig> &configs) {
                 // 解析请求
                 HttpRequest req = parseRequest(rbuf);
 
+                std::cerr << "body size: " << req.body.size() << std::endl;
+
                 // 413 body 过大
                 if (req.body.size() > clients[fds[i].fd].config->max_body) {
                     std::string resp = "HTTP/1.1 413 Content Too Large\r\n"
                                        "Content-Length: 0\r\n\r\n";
                     send(fds[i].fd, resp.c_str(), resp.size(), 0);
+                    close(fds[i].fd);         
+                    clients.erase(fds[i].fd);             
+                    fds.erase(fds.begin() + i);                 
+                    i--;  
+                    continue;
+                }
+
+                // Session 路由
+                if (req.path == "/login" && req.method == "GET") {
+                    std::string body = "<html><body>"
+                                    "<form method='POST' action='/login'>"
+                                    "用户名: <input name='username' type='text'/>"
+                                    "<input type='submit' value='登录'/>"
+                                    "</form></body></html>";
+                    std::ostringstream len;
+                    len << body.size();
+                    std::string resp = "HTTP/1.1 200 OK\r\n"
+                                    "Content-Type: text/html; charset=utf-8\r\n"
+                                    "Content-Length: " + len.str() + "\r\n"
+                                    "\r\n" + body;
+                    send(fds[i].fd, resp.c_str(), resp.size(), 0);
                     clients[fds[i].fd].recv_buffer.clear();
                     continue;
                 }
 
-                // 匹配 location
+                if (req.path == "/login" && req.method == "POST") {
+                    // 从 body 里解析 username=Alice
+                    std::string username = "";
+                    std::string body = req.body;
+                    size_t pos = body.find("username=");
+                    if (pos != std::string::npos)
+                        username = body.substr(pos + 9);
+
+                    // 生成 session_id，存进 map
+                    std::string sid = generateSessionId();
+                    sessions[sid] = username;
+
+                    std::string resp_body = "<html><body><h1>登录成功！</h1>"
+                                            "<a href='/welcome'>进入欢迎页</a>"
+                                            "</body></html>";
+                    std::ostringstream len;
+                    len << resp_body.size();
+                    std::string resp = "HTTP/1.1 200 OK\r\n"
+                                    "Content-Type: text/html; charset=utf-8\r\n"
+                                    "Set-Cookie: sid=" + sid + "; Path=/\r\n"
+                                    "Content-Length: " + len.str() + "\r\n"
+                                    "\r\n" + resp_body;
+                    send(fds[i].fd, resp.c_str(), resp.size(), 0);
+                    clients[fds[i].fd].recv_buffer.clear();
+                    continue;
+                }
+
+                if (req.path == "/welcome") {
+                    // 从请求头里读 Cookie
+                    std::string username = "陌生人";
+                    if (req.headers.count("Cookie")) {
+                        std::string cookie = req.headers["Cookie"];
+                        size_t pos = cookie.find("sid=");
+                        if (pos != std::string::npos) {
+                            std::string sid = cookie.substr(pos + 4);
+                            if (sessions.count(sid))
+                                username = sessions[sid];
+                        }
+                    }
+                    std::string body = "<html><body><h1>欢迎回来，" + username + "！</h1>"
+                                    "<a href='/logout'>退出登录</a>"
+                                    "</body></html>";
+                    std::ostringstream len;
+                    len << body.size();
+                    std::string resp = "HTTP/1.1 200 OK\r\n"
+                                    "Content-Type: text/html; charset=utf-8\r\n"
+                                    "Content-Length: " + len.str() + "\r\n"
+                                    "\r\n" + body;
+                    send(fds[i].fd, resp.c_str(), resp.size(), 0);
+                    clients[fds[i].fd].recv_buffer.clear();
+                    continue;
+                }
+
+                if (req.path == "/logout") {
+                    // 读 Cookie，删除 session
+                    if (req.headers.count("Cookie")) {
+                        std::string cookie = req.headers["Cookie"];
+                        size_t pos = cookie.find("sid=");
+                        if (pos != std::string::npos) {
+                            std::string sid = cookie.substr(pos + 4);
+                            sessions.erase(sid);
+                        }
+                    }
+                    std::string body = "<html><body><h1>已退出登录</h1>"
+                                    "<a href='/login'>重新登录</a>"
+                                    "</body></html>";
+                    std::ostringstream len;
+                    len << body.size();
+                    // Set-Cookie 过期时间设为过去，让浏览器删除 Cookie
+                    std::string resp = "HTTP/1.1 200 OK\r\n"
+                                    "Content-Type: text/html; charset=utf-8\r\n"
+                                    "Set-Cookie: sid=; expires=Thu, 01 Jan 1970 00:00:00 GMT\r\n"
+                                    "Content-Length: " + len.str() + "\r\n"
+                                    "\r\n" + body;
+                    send(fds[i].fd, resp.c_str(), resp.size(), 0);
+                    clients[fds[i].fd].recv_buffer.clear();
+                    continue;
+                }
+
+                // 路由判断 匹配 location
                 LocationConfig* loc = matchLocation(*clients[fds[i].fd].config, req.path);
                 if (!loc) {
                     std::string resp = "HTTP/1.1 404 Not Found\r\n"
@@ -500,6 +397,7 @@ void runServer(std::vector<ServerConfig> &configs) {
                 }
 
                 if (loc->redirect_code != 0 && !loc->redirect_url.empty()) {
+                    std::cerr << "redirect: " << loc->redirect_code << " → " << loc->redirect_url << std::endl;
                     std::ostringstream oss;
                     oss << loc->redirect_code;
                     std::string status_text = (loc->redirect_code == 301) ? "Moved Permanently" : "Found";
