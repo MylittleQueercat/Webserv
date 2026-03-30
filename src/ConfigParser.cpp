@@ -1,4 +1,4 @@
-#include "../includes/ConfigParser.hpp"
+#include "../includes/Webserv.hpp"
 #include <fstream>
 #include <sstream>
 #include <iostream>
@@ -101,11 +101,6 @@ ServerConfig parseServer(std::ifstream &file) {
                 iss >> val;
                 config.root = trim(val);
             }
-            // else if (key == "error_page") {
-            //     std::string code, path;
-            //     iss >> code >> path;
-            //     config.error_page = trim(path);
-            // }
             else if (key == "error_page") {
                 std::string code, path;
                 iss >> code >> path;
@@ -134,33 +129,11 @@ std::vector<ServerConfig> parseConfigs(const std::string &filename) {
         if (line.empty() || line[0] == '#')
             continue;
         if (line == "server {")
-            servers.push_back(parseServer(file));  // 每个 server{} 加进去
+            servers.push_back(parseServer(file));
     }
     file.close();
     return servers;
 }
-
-// ServerConfig    parseConfig(const std::string &filename) {
-//     std::ifstream file(filename.c_str());
-//     if (!file.is_open()) {
-//         std::cerr << "Error: cannot open " << filename << std::endl;
-//         exit(1);
-//     }
-
-//     std::string line;
-
-//     while (std::getline(file, line)) {
-//         line = trim(line);
-
-//         if (line.empty() || line[0] == '#')
-//             continue ;
-        
-//         if (line == "server {")
-//             return parseServer(file);
-//     }
-//     file.close();
-//     return ServerConfig();
-// }
 
 LocationConfig* matchLocation(ServerConfig &config, const std::string &path) {
     LocationConfig* best_match = NULL;
