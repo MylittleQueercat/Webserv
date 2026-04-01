@@ -344,7 +344,18 @@ static void handleClientData(size_t& i,
 
     // Match location from config
     LocationConfig* loc = matchLocation(*clients[fds[i].fd].config, req.path);
-    if (!loc) {
+   
+    if (!loc)
+    {
+        std::string redirectPath = req.path + "/";
+        LocationConfig* locWithSlash = matchLocation(*clients[fds[i].fd].config, redirectPath);
+        if (locWithSlash)
+        {
+            std::string resp = "HTTP/1.1 301 Moved Permanently\r\nLocation: " + redirectPath + "\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
+            send(fds[i].fd, resp.c_str(), resp.size(), 0);
+            clients[fds[i].fd].recv_buffer.clear();
+            return;
+        }
         std::string resp = buildErrorResponse(404, *clients[fds[i].fd].config);
         send(fds[i].fd, resp.c_str(), resp.size(), 0);
         clients[fds[i].fd].recv_buffer.clear();

@@ -115,11 +115,25 @@ std::string buildAutoindex(const std::string &url_path,
 
 std::string handleGET(const HttpRequest &req, const ServerConfig &config, const LocationConfig &loc)
 {
-    std::string filepath = config.root + req.path;
-    if (filepath[filepath.size() - 1] == '/') {
-        if (loc.autoindex) {
+    //std::string filepath = config.root + req.path;
+    std::string base = loc.root.empty() ? config.root : loc.root;
+    std::string filepath = base + req.path;
+    //commentaires
+    std::cerr << "DEBUG filepath: [" << filepath << "]" << std::endl;
+    std::cerr << "DEBUG loc.root: [" << loc.root << "]" << std::endl;
+    std::cerr << "DEBUG config.root: [" << config.root << "]" << std::endl;
+    
+    if (filepath[filepath.size() - 1] != '/') 
+    {
+        struct stat st;
+        if (stat(filepath.c_str(), &st) == 0 && S_ISDIR(st.st_mode))
+            filepath += '/';
+    }
+
+    if (filepath[filepath.size() - 1] == '/') 
+    {
+        if (loc.autoindex)
             return buildAutoindex(req.path, filepath, config);
-        }
         std::string index = loc.index.empty() ? "index.html" : loc.index;
         filepath += index;
     }
