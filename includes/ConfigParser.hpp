@@ -51,7 +51,6 @@ struct ServerConfig {
     size_t                       max_body;    // 1048576 (1m)
     std::vector<LocationConfig>  locations;
 
-    //构造函数，设置默认值
     ServerConfig() : port(80), max_body(1048576) {}
 };
 

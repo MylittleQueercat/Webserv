@@ -135,6 +135,7 @@ Open `http://localhost:8080/login` in a browser, enter a username, and navigate 
 https://cplusplus.com/reference/sstream/ostringstream/  
 https://en.cppreference.com/w/cpp/io/basic_ifstream.html  
 https://www.php.net/manual/en/function.realpath.php  
+https://man7.org/linux/man-pages/man2/accept.2.html
 
 ### How AI was used
 

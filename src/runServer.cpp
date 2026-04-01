@@ -151,7 +151,7 @@ static bool acceptNewClient(size_t i,
                              std::map<int, ServerConfig*>& fd_to_config) {
     if (!server_fds.count(fds[i].fd))
         return false;
-
+    
     int client_fd = accept(fds[i].fd, NULL, NULL);
     if (client_fd < 0) {
         std::cerr << "accept() failed" << std::endl;
@@ -403,10 +403,10 @@ static void handleClientData(size_t& i,
 
 // ── Main server loop ───────────────────────────────────────────────────────
 void runServer(std::vector<ServerConfig>& configs) {
-    std::vector<struct pollfd> fds;
+    std::vector<struct pollfd> fds;//master watch list 
     std::set<int>              server_fds;
-    std::map<int, ClientState> clients;
-    std::map<int, ServerConfig*> fd_to_config;
+    std::map<int, ClientState> clients;//client fd-> ClientState
+    std::map<int, ServerConfig*> fd_to_config;//server fd -> ServerConfig*
 
     // Register all server sockets
     for (size_t i = 0; i < configs.size(); i++) {
@@ -421,6 +421,7 @@ void runServer(std::vector<ServerConfig>& configs) {
 
     while (true) {
         // Timeout of 1 second ensures CGI timeout check runs every second
+        // poll() monitors all fds simultaneously for a maximum of 1000ms. If one or more events occur before the timeour expires, poll() will return immediatly with "ready" equal to the number of fds that have events at that moment. If no event occurs within 1000ms, poll() returns anyway with "ready = 0" -- this guaranteed wake-up ensures that "checkCGITimeouts(clients, fds)" is called at least once per second, even when the server is completely idle.
         int ready = poll(&fds[0], fds.size(), 1000);
         if (ready < 0) {
             std::cerr << "poll() failed" << std::endl;

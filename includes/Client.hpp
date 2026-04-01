@@ -18,6 +18,7 @@
 # include "ConfigParser.hpp"
 # include <ctime>
 
+//ClientState is a snapshot of everything that the server needs to know about on connected client
 struct ClientState {
     int         fd;
     std::string recv_buffer;    // accumulated received data
@@ -28,9 +29,9 @@ struct ClientState {
 
     // CGI
     pid_t       cgi_pid;
-    int         cgi_output_fd;
+    int         cgi_output_fd;// Source: the pipe the server reads raw bytes from CGI process
     bool        is_cgi;
-    std::string cgi_output;
+    std::string cgi_output;//Destination: the string stores the raw bytes
     time_t      cgi_last_activity;
 
     ClientState();
