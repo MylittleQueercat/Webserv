@@ -6,7 +6,7 @@
 /*   By: hguo <hguo@student.42.fr>                  +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2026/03/30 16:51:04 by hguo              #+#    #+#             */
-/*   Updated: 2026/04/02 13:27:54 by hguo             ###   ########.fr       */
+/*   Updated: 2026/04/02 13:59:04 by hguo             ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -45,6 +45,9 @@ void startCGI(const HttpRequest &req, const LocationConfig &loc, ClientState &cl
         } else if (req.path.find(".sh") != std::string::npos) {
             interpreter      = "bash";
             interpreter_path = "/bin/bash";
+        } else if (req.path.find(".bla") != std::string::npos) {
+            interpreter      = "cgi_tester";
+            interpreter_path = "./cgi_tester";
         } else {
             exit(1);  // Unsupported file type
         }
@@ -57,11 +60,13 @@ void startCGI(const HttpRequest &req, const LocationConfig &loc, ClientState &cl
         std::string method = "REQUEST_METHOD=" + req.method;
         std::string path   = "PATH_INFO=" + req.path;
         std::string query  = "QUERY_STRING=";
-        char *env[4];
+        std::string protocol = "SERVER_PROTOCOL=HTTP/1.1";
+        char *env[5];
         env[0] = (char*)method.c_str();
         env[1] = (char*)path.c_str();
         env[2] = (char*)query.c_str();
-        env[3] = NULL;
+        env[3] = (char*)protocol.c_str();
+        env[4] = NULL;
 
         execve(interpreter_path.c_str(), args, env);
         exit(1);

@@ -6,7 +6,7 @@
 /*   By: hguo <hguo@student.42.fr>                  +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2026/03/30 16:51:56 by hguo              #+#    #+#             */
-/*   Updated: 2026/03/30 16:51:57 by hguo             ###   ########.fr       */
+/*   Updated: 2026/04/02 13:47:41 by hguo             ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -76,6 +76,11 @@ LocationConfig parseLocation(std::ifstream &file, const std::string &path) {
             iss >> code >> url;
             loc.redirect_code = atoi(code.c_str());
             loc.redirect_url  = trim(url);
+        }
+        else if (key == "root") {
+            std::string val;
+            iss >> val;
+            loc.root = trim(val);
         }
     }
     return loc;

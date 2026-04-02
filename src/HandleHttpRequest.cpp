@@ -3,10 +3,10 @@
 /*                                                        :::      ::::::::   */
 /*   HandleHttpRequest.cpp                              :+:      :+:    :+:   */
 /*                                                    +:+ +:+         +:+     */
-/*   By: jili <jili@student.42.fr>                  +#+  +:+       +#+        */
+/*   By: hguo <hguo@student.42.fr>                  +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2026/03/30 16:55:36 by jili              #+#    #+#             */
-/*   Updated: 2026/03/30 16:55:37 by jili             ###   ########.fr       */
+/*   Updated: 2026/04/02 13:52:26 by hguo             ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -117,7 +117,29 @@ std::string handleGET(const HttpRequest &req, const ServerConfig &config, const 
 {
     //std::string filepath = config.root + req.path;
     std::string base = loc.root.empty() ? config.root : loc.root;
-    std::string filepath = base + req.path;
+
+    // Strip location prefix from req.path
+    std::string relative_path = req.path;
+
+    std::string loc_prefix = loc.path;
+
+    // Remove trailing slash from loc_prefix for comparison
+    if (!loc_prefix.empty() && loc_prefix[loc_prefix.size() - 1] == '/')
+        loc_prefix = loc_prefix.substr(0, loc_prefix.size() - 1);
+
+    if (!loc_prefix.empty() && relative_path.find(loc_prefix) == 0)
+        relative_path = relative_path.substr(loc_prefix.size()); // e.g. "" or "/something"
+
+    if (relative_path.empty())
+        relative_path = "/";
+
+    // if (!loc.path.empty() && relative_path.find(loc.path) == 0)
+    //     relative_path = relative_path.substr(loc.path.size() - 1); // keep leading /
+
+    std::string filepath = base + relative_path;
+    
+    // std::string filepath = base + req.path;
+    
     //commentaires
     std::cerr << "DEBUG filepath: [" << filepath << "]" << std::endl;
     std::cerr << "DEBUG loc.root: [" << loc.root << "]" << std::endl;
@@ -143,7 +165,9 @@ std::string handleGET(const HttpRequest &req, const ServerConfig &config, const 
         return buildErrorResponse(404, config);
 
     char root[PATH_MAX];
-    realpath(config.root.c_str(), root);
+    std::string root_to_check = loc.root.empty() ? config.root : loc.root;
+    realpath(root_to_check.c_str(), root);
+    // realpath(config.root.c_str(), root);
     std::string root_str(root);
     if (root_str[root_str.size() - 1] != '/')
         root_str += '/';

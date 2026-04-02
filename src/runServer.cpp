@@ -6,7 +6,7 @@
 /*   By: hguo <hguo@student.42.fr>                  +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2026/03/30 16:54:54 by jili              #+#    #+#             */
-/*   Updated: 2026/04/02 13:32:32 by hguo             ###   ########.fr       */
+/*   Updated: 2026/04/02 14:10:46 by hguo             ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -318,6 +318,11 @@ static void handleClientData(size_t& i,
         }
     }
 
+    if (rbuf.find("Expect: 100-continue") != std::string::npos) {
+        std::string cont = "HTTP/1.1 100 Continue\r\n\r\n";
+        send(fds[i].fd, cont.c_str(), cont.size(), 0);
+    }
+
     if (!isRequestComplete(rbuf))
         return;
 
@@ -345,23 +350,40 @@ static void handleClientData(size_t& i,
     // Match location from config
     LocationConfig* loc = matchLocation(*clients[fds[i].fd].config, req.path);
 
-    if (!loc)
-    {
-        std::string redirectPath = req.path + "/";
-        LocationConfig* locWithSlash = matchLocation(*clients[fds[i].fd].config, redirectPath);
-        if (locWithSlash)
-        {
-            std::string resp = "HTTP/1.1 301 Moved Permanently\r\nLocation: " + redirectPath + "\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
-            send(fds[i].fd, resp.c_str(), resp.size(), 0);
-            clients[fds[i].fd].recv_buffer.clear();
-            return;
-        }
+    // if (!loc)
+    // {
+    //     std::string redirectPath = req.path + "/";
+    //     LocationConfig* locWithSlash = matchLocation(*clients[fds[i].fd].config, redirectPath);
+    //     if (locWithSlash)
+    //     {
+    //         std::string resp = "HTTP/1.1 301 Moved Permanently\r\nLocation: " + redirectPath + "\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
+    //         send(fds[i].fd, resp.c_str(), resp.size(), 0);
+    //         clients[fds[i].fd].recv_buffer.clear();
+    //         return;
+    //     }
+    //     std::string resp = buildErrorResponse(404, *clients[fds[i].fd].config);
+    //     send(fds[i].fd, resp.c_str(), resp.size(), 0);
+    //     clients[fds[i].fd].recv_buffer.clear();
+    //     return;
+    // }
+
+    LocationConfig* loc_with_slash = matchLocation(*clients[fds[i].fd].config, req.path + "/");
+
+    std::cerr << "req.path: [" << req.path << "]" << std::endl;
+    std::cerr << "loc: [" << (loc ? loc->path : "NULL") << "]" << std::endl;
+    std::cerr << "loc_with_slash: [" << (loc_with_slash ? loc_with_slash->path : "NULL") << "]" << std::endl;
+
+
+    if (loc_with_slash)
+        loc = loc_with_slash;  // prefer more specific match
+
+    if (!loc) {
         std::string resp = buildErrorResponse(404, *clients[fds[i].fd].config);
         send(fds[i].fd, resp.c_str(), resp.size(), 0);
         clients[fds[i].fd].recv_buffer.clear();
         return;
     }
-
+    
     // HTTP redirect (301/302)
     if (loc->redirect_code != 0 && !loc->redirect_url.empty()) {
         std::ostringstream oss;
