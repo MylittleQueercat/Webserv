@@ -6,14 +6,13 @@
 /*   By: hguo <hguo@student.42.fr>                  +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2026/03/30 16:51:04 by hguo              #+#    #+#             */
-/*   Updated: 2026/03/30 16:51:05 by hguo             ###   ########.fr       */
+/*   Updated: 2026/04/02 13:27:54 by hguo             ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
 #include "../includes/Webserv.hpp"
 
 void startCGI(const HttpRequest &req, const LocationConfig &loc, ClientState &client) {
-    (void)loc;
     int input_pipe[2];
     int output_pipe[2];
     pipe(input_pipe);
@@ -30,7 +29,9 @@ void startCGI(const HttpRequest &req, const LocationConfig &loc, ClientState &cl
         close(input_pipe[0]);
         close(output_pipe[1]);
 
-        std::string scriptpath = "./www" + req.path;
+        // std::string scriptpath = "./www" + req.path;
+        std::string base = loc.root.empty() ? "./www" : loc.root;
+        std::string scriptpath = base + req.path;
 
         // Select interpreter based on file extension
         std::string interpreter;

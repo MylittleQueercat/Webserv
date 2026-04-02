@@ -3,10 +3,10 @@
 /*                                                        :::      ::::::::   */
 /*   runServer.cpp                                      :+:      :+:    :+:   */
 /*                                                    +:+ +:+         +:+     */
-/*   By: jili <jili@student.42.fr>                  +#+  +:+       +#+        */
+/*   By: hguo <hguo@student.42.fr>                  +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2026/03/30 16:54:54 by jili              #+#    #+#             */
-/*   Updated: 2026/03/30 16:54:55 by jili             ###   ########.fr       */
+/*   Updated: 2026/04/02 13:32:32 by hguo             ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -344,7 +344,7 @@ static void handleClientData(size_t& i,
 
     // Match location from config
     LocationConfig* loc = matchLocation(*clients[fds[i].fd].config, req.path);
-   
+
     if (!loc)
     {
         std::string redirectPath = req.path + "/";
