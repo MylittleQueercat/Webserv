@@ -151,7 +151,8 @@ std::vector<ServerConfig> parseConfigs(const std::string &filename) {
     file.close();
     return servers;
 }
-
+//matchLocation scans location entries(in the file.conf) and returns a pointer to the best matching LocationConfig for a given request path. If nothing matches, it returns NULL.
+//longest prefix matcher : it loops through all locations and picks the one whose path is the longest prefix of the request path; Since every path starts with /, the root location always matches as a minimum fallback
 LocationConfig* matchLocation(ServerConfig &config, const std::string &path) {
     LocationConfig* best_match = NULL;
     size_t best_length = 0;
