@@ -3,15 +3,18 @@
 /*                                                        :::      ::::::::   */
 /*   HttpRequest.cpp                                    :+:      :+:    :+:   */
 /*                                                    +:+ +:+         +:+     */
-/*   By: hguo <hguo@student.42.fr>                  +#+  +:+       +#+        */
+/*   By: leticiabi <leticiabi@student.42.fr>        +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2026/03/30 16:52:11 by hguo              #+#    #+#             */
-/*   Updated: 2026/03/30 16:52:12 by hguo             ###   ########.fr       */
+/*   Updated: 2026/04/05 13:04:45 by leticiabi        ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
 #include "../includes/Webserv.hpp"
 
+// Decodes a chunked HTTP body into a plain string
+// Chunked format: each chunk starts with its size in hex, followed by \r\n and the data
+// A chunk size of 0 signals the end of the body
 std::string unchunk(const std::string &body) {
     std::string result = "";
     size_t pos = 0;
@@ -31,6 +34,8 @@ std::string unchunk(const std::string &body) {
     return result;
 }
 
+// Parses a raw HTTP request string into an HttpRequest struct
+// Extracts method, path, version, headers, and body
 HttpRequest parseRequest(const std::string &raw) {
     HttpRequest req;
 
@@ -38,12 +43,13 @@ HttpRequest parseRequest(const std::string &raw) {
     size_t first_line_end = raw.find("\r\n");
     std::string first_line = raw.substr(0, first_line_end);
     
-    // Read headers line by line
+    // Parse headers line by line until empty line (end of headers)
     size_t pos = first_line_end + 2;
     while (pos < raw.size()) {
         size_t line_end = raw.find("\r\n", pos);
         std::string line = raw.substr(pos, line_end - pos);
 
+        // Empty line marks end of headers
         if (line.empty())
             break;
 
@@ -60,7 +66,7 @@ HttpRequest parseRequest(const std::string &raw) {
         pos = line_end + 2;
     }
 
-    // Get method/path/version
+    // Extract method/path/version
     std::istringstream iss(first_line);
     iss >> req.method >> req.path >> req.version;
 

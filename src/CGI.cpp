@@ -3,15 +3,18 @@
 /*                                                        :::      ::::::::   */
 /*   CGI.cpp                                            :+:      :+:    :+:   */
 /*                                                    +:+ +:+         +:+     */
-/*   By: hguo <hguo@student.42.fr>                  +#+  +:+       +#+        */
+/*   By: leticiabi <leticiabi@student.42.fr>        +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2026/03/30 16:51:04 by hguo              #+#    #+#             */
-/*   Updated: 2026/04/02 13:59:04 by hguo             ###   ########.fr       */
+/*   Updated: 2026/04/05 13:07:38 by leticiabi        ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
 #include "../includes/Webserv.hpp"
 
+// Forks a child process to execute a CGI script
+// Uses two pipes: input_pipe for sending POST body to the script,
+// output_pipe for reading the script's HTTP response
 void startCGI(const HttpRequest &req, const LocationConfig &loc, ClientState &client) {
     int input_pipe[2];
     int output_pipe[2];
@@ -29,7 +32,7 @@ void startCGI(const HttpRequest &req, const LocationConfig &loc, ClientState &cl
         close(input_pipe[0]);
         close(output_pipe[1]);
 
-        // std::string scriptpath = "./www" + req.path;
+        // Build script path using loc.root if set, otherwise default to ./www
         std::string base = loc.root.empty() ? "./www" : loc.root;
         std::string scriptpath = base + req.path;
 
@@ -49,7 +52,7 @@ void startCGI(const HttpRequest &req, const LocationConfig &loc, ClientState &cl
             interpreter      = "cgi_tester";
             interpreter_path = "./cgi_tester";
         } else {
-            exit(1);  // Unsupported file type
+            exit(1);
         }
 
         char *args[3];

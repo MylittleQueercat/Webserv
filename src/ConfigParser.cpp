@@ -3,10 +3,10 @@
 /*                                                        :::      ::::::::   */
 /*   ConfigParser.cpp                                   :+:      :+:    :+:   */
 /*                                                    +:+ +:+         +:+     */
-/*   By: hguo <hguo@student.42.fr>                  +#+  +:+       +#+        */
+/*   By: leticiabi <leticiabi@student.42.fr>        +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2026/03/30 16:51:56 by hguo              #+#    #+#             */
-/*   Updated: 2026/04/02 13:47:41 by hguo             ###   ########.fr       */
+/*   Updated: 2026/04/05 13:01:00 by leticiabi        ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -16,6 +16,7 @@
 #include <iostream>
 #include <cstdlib>
 
+// Removes leading/trailing whitespace and trailing semicolons from a string
 std::string trim(const std::string &s) {
     size_t start = s.find_first_not_of(" \t");
     if (start == std::string::npos)
@@ -24,6 +25,7 @@ std::string trim(const std::string &s) {
     return s.substr(start, end - start + 1);
 }
 
+// Converts a size string (e.g. "1m", "10k") to bytes
 size_t  parseSize(const std::string &s) {
     size_t  multiplier = 1;
     if (s[s.size() - 1] == 'm')
@@ -33,6 +35,8 @@ size_t  parseSize(const std::string &s) {
     return atoi(s.c_str()) * multiplier;
 }
 
+// Parses a location{} block from the config file and returns a LocationConfig
+// Reads line by line until closing brace '}'
 LocationConfig parseLocation(std::ifstream &file, const std::string &path) {
     LocationConfig loc;
     loc.path = path;
@@ -86,6 +90,8 @@ LocationConfig parseLocation(std::ifstream &file, const std::string &path) {
     return loc;
 }
 
+// Parses a server{} block from the config file and returns a ServerConfig
+// When a location{} block is encountered, delegates to parseLocation()
 ServerConfig parseServer(std::ifstream &file) {
     ServerConfig    config;
 
@@ -133,6 +139,8 @@ ServerConfig parseServer(std::ifstream &file) {
     return config;
 }
 
+// Parses the entire config file and returns all server configurations
+// Each "server {" block is parsed into a ServerConfig and added to the vector
 std::vector<ServerConfig> parseConfigs(const std::string &filename) {
     std::vector<ServerConfig> servers;
     std::ifstream file(filename.c_str());
@@ -151,6 +159,7 @@ std::vector<ServerConfig> parseConfigs(const std::string &filename) {
     file.close();
     return servers;
 }
+
 //matchLocation scans location entries(in the file.conf) and returns a pointer to the best matching LocationConfig for a given request path. If nothing matches, it returns NULL.
 //longest prefix matcher : it loops through all locations and picks the one whose path is the longest prefix of the request path; Since every path starts with /, the root location always matches as a minimum fallback
 LocationConfig* matchLocation(ServerConfig &config, const std::string &path) {
@@ -167,6 +176,5 @@ LocationConfig* matchLocation(ServerConfig &config, const std::string &path) {
             }
         } 
     }
-
     return best_match;
 }
