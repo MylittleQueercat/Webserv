@@ -394,7 +394,7 @@ static void handleClientData(size_t& i,
         return;
     }
     
-    //6. HTTP redirect (301/302) : We should add the 302 part or not?
+    //TO BE DISCUSSED : 6. HTTP redirect (301/302) : We should add the 302 part or not?
     if (loc->redirect_code != 0 && !loc->redirect_url.empty())
 	{
         std::ostringstream oss;

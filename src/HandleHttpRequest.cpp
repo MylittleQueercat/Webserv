@@ -12,30 +12,42 @@
 
 #include "../includes/Webserv.hpp"
 
-std::string getStatusText(int code) {
-    if (code == 400) return "Bad Request";
-    if (code == 403) return "Forbidden";
-    if (code == 404) return "Not Found";
-    if (code == 405) return "Method Not Allowed";
-    if (code == 413) return "Content Too Large";
-    if (code == 500) return "Internal Server Error";
+std::string getStatusText(int code)
+{
+    if (code == 400)
+		return "Bad Request";
+    if (code == 403)
+		return "Forbidden";
+    if (code == 404)
+		return "Not Found";
+    if (code == 405)
+		return "Method Not Allowed";
+    if (code == 413)
+		return "Content Too Large";
+    if (code == 500)
+		return "Internal Server Error";
     return "Error";
 }
-
-std::string buildErrorResponse(int code, const ServerConfig &config) {
+//Bulid a complete HTTP error response : It tries to serve a custom HTML error page from disk first, and falls back to a minimal page if none is found
+std::string buildErrorResponse(int code, const ServerConfig &config)
+{
+	// 1. look up the custom error page path
     std::string error_page_path = "";
     if (config.error_pages.count(code))
         error_page_path = config.error_pages.at(code);
     std::string filepath = "./www" + error_page_path;
-
+	// 2. bulid the status line
     std::ostringstream oss;
     oss << code;
     std::string status = "HTTP/1.1 " + oss.str() + " " + getStatusText(code) + "\r\n";
-
-    if (config.error_pages.count(code)) {
+	//3. if the key (error code) exists in the map error_pages, the correspond error_page.html will be transformed into a string, and return a HTTP response
+    if (config.error_pages.count(code))
+	{
         std::ifstream file(filepath.c_str());
-        if (file.is_open()) {
-            std::string body((std::istreambuf_iterator<char>(file)),
+        if (file.is_open())
+		{
+			//one liner that reads the entire file into a string: std::istreambuf_iterator<char>(file) ->start: beginning of file,  std::istreambuf_iterator<char>() -> end : end of file
+			std::string body((std::istreambuf_iterator<char>(file)),
                             std::istreambuf_iterator<char>());
             std::ostringstream len;
             len << body.size();
@@ -45,7 +57,7 @@ std::string buildErrorResponse(int code, const ServerConfig &config) {
                 "\r\n" + body;
         }
     }
-    // File not found or no error_page configured, return built-in default error page
+    // File not found or no error_page configured, build and return a minimal error response
     std::string default_body = "<html><body><h1>" + oss.str() + " " + getStatusText(code) + "</h1></body></html>";
     std::ostringstream default_len;
     default_len << default_body.size();
@@ -61,19 +73,24 @@ std::string getContentType(const std::string &filepath)
 	if (dot == std::string::npos)
 		return "application/octet-stream";// unknown file type
 	std::string ext = filepath.substr(dot);
-	if (ext == ".html") return "text/html";
-    if (ext == ".css")  return "text/css";
-    if (ext == ".js")   return "application/javascript";
-    if (ext == ".png")  return "image/png";
-    if (ext == ".jpg")  return "image/jpeg";
-    if (ext == ".gif")  return "image/gif";
-    if (ext == ".txt")  return "text/plain";
-    if (ext == ".pdf")  return "application/pdf";
+	if (ext == ".html")
+		return "text/html";
+    if (ext == ".css")
+		return "text/css";
+    if (ext == ".js")
+		return "application/javascript";
+    if (ext == ".png")
+		return "image/png";
+    if (ext == ".jpg")
+		return "image/jpeg";
+    if (ext == ".gif")
+		return "image/gif";
+    if (ext == ".txt")
+		return "text/plain";
+    if (ext == ".pdf")
+		return "application/pdf";
 	return "application/octet-stream";
 }
-
-#include <dirent.h>
-#include <sys/stat.h>
 
 std::string buildAutoindex(const std::string &url_path,
                             const std::string &dir_path,
