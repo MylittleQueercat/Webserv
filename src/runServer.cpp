@@ -19,16 +19,17 @@ ClientState::ClientState() : fd(-1), headers_done(false),
 
 // Global session storage: session_id -> username
 std::map<std::string, std::string> sessions;
-
-static std::string generateSessionId() {
+// Generate a random 16-character hexadecimal string to use as a unique session ID : a3f9b2c1d4e57f02
+	//rand() % 16 → random number between 0 and 15;std::hex → convert it to hexadecimal character
+static std::string generateSessionId()
+{
     std::ostringstream oss;
     for (int i = 0; i < 16; i++)
         oss << std::hex << (rand() % 16);
     return oss.str();
 }
 
-// ── 1. CGI timeout check ───────────────────────────────────────────────────
-// Kills CGI processes that have been running for more than 10 seconds
+// 1. CGI timeout check : Kills CGI processes that have been running for more than 10 seconds
 static void checkCGITimeouts(std::map<int, ClientState>& clients,
                                std::vector<struct pollfd>& fds) {
     for (std::map<int, ClientState>::iterator it = clients.begin();
@@ -60,8 +61,7 @@ static void checkCGITimeouts(std::map<int, ClientState>& clients,
     }
 }
 
-// ── 2. CGI pipe handler ────────────────────────────────────────────────────
-// Returns true if the fd was a CGI pipe and was handled
+// 2. CGI pipe handler : Returns true if the fd was a CGI pipe and was handled
 static bool handleCGIPipe(size_t& i,
                            std::vector<struct pollfd>& fds,
                            std::map<int, ClientState>& clients) {
@@ -142,31 +142,32 @@ static bool handleCGIPipe(size_t& i,
     return true;
 }
 
-// ── 3. New client acceptor ─────────────────────────────────────────────────
-// Returns true if the fd was a server socket and a new client was accepted
+// 3. New client acceptor : Returns true if the fd was a server socket and a new client was accepted
 static bool acceptNewClient(size_t i,
                              std::vector<struct pollfd>& fds,
                              std::set<int>& server_fds,
                              std::map<int, ClientState>& clients,
-                             std::map<int, ServerConfig*>& fd_to_config) {
+                             std::map<int, ServerConfig*>& fd_to_config)
+{
     if (!server_fds.count(fds[i].fd))
         return false;
-    
+
     int client_fd = accept(fds[i].fd, NULL, NULL);
-    if (client_fd < 0) {
+    if (client_fd < 0)
+	{
         std::cerr << "accept() failed" << std::endl;
         return true;
     }
-
+	//O_NONBLOCK tells the OS never to freeze your program waiting for I/O — if nothing is ready, return immediately with EAGAIN so your program can go do something else
     int flags = fcntl(client_fd, F_GETFL, 0);
     fcntl(client_fd, F_SETFL, flags | O_NONBLOCK);
-
+	//Add the new Client into the poll() listening list 
     struct pollfd client_pfd;
     client_pfd.fd      = client_fd;
     client_pfd.events  = POLLIN;
     client_pfd.revents = 0;
     fds.push_back(client_pfd);
-
+	// set the state.config -> create the lien between client_fd and his server in the ClientState level
     ClientState state;
     state.fd     = client_fd;
     state.config = fd_to_config[fds[i].fd];
@@ -177,8 +178,7 @@ static bool acceptNewClient(size_t i,
     return true;
 }
 
-// ── 4. Request completeness check ─────────────────────────────────────────
-// Returns true when the full HTTP request (headers + body) has been received
+// 4. Request completeness check : Returns true when the full HTTP request (headers + body) has been received
 static bool isRequestComplete(const std::string& rbuf) {
     if (rbuf.find("\r\n\r\n") == std::string::npos)
         return false;
@@ -197,11 +197,13 @@ static bool isRequestComplete(const std::string& rbuf) {
     return body_received >= content_length;
 }
 
-// ── 5. Session route handler ───────────────────────────────────────────────
-// Returns the full HTTP response string if the path is a session route,
-// returns empty string if not a session route
-static std::string handleSessionRoute(const HttpRequest& req) {
-    if (req.path == "/login" && req.method == "GET") {
+// 5. Session route handler : Returns the full HTTP response string if the path is a session route (4 session-related routes); returns empty string if not a session route
+	//This code uses Cookies for identity during a session (login from submission -> welcome page), not for remembering username across sessions
+static std::string handleSessionRoute(const HttpRequest& req)
+{
+	//login page
+    if (req.path == "/login" && req.method == "GET")
+	{
         std::string body = "<html><body>"
                            "<form method='POST' action='/login'>"
                            "Username: <input name='username' type='text'/>"
@@ -215,15 +217,15 @@ static std::string handleSessionRoute(const HttpRequest& req) {
                "\r\n" + body;
     }
 
-    if (req.path == "/login" && req.method == "POST") {
+	//login form submission
+    if (req.path == "/login" && req.method == "POST")
+	{
         std::string username = "";
         size_t pos = req.body.find("username=");
         if (pos != std::string::npos)
             username = req.body.substr(pos + 9);
-
         std::string sid = generateSessionId();
-        sessions[sid] = username;
-
+        sessions[sid] = username;//in session map
         std::string body = "<html><body><h1>Login successful!</h1>"
                            "<a href='/welcome'>Go to welcome page</a>"
                            "</body></html>";
@@ -235,10 +237,11 @@ static std::string handleSessionRoute(const HttpRequest& req) {
                "Content-Length: " + len.str() + "\r\n"
                "\r\n" + body;
     }
-
+	//welcome page : get username from Cookies
     if (req.path == "/welcome") {
         std::string username = "Stranger";
-        if (req.headers.count("Cookie")) {
+        if (req.headers.count("Cookie"))
+		{
             std::string cookie = req.headers.find("Cookie")->second;
             size_t pos = cookie.find("sid=");
             if (pos != std::string::npos) {
@@ -257,11 +260,14 @@ static std::string handleSessionRoute(const HttpRequest& req) {
                "Content-Length: " + len.str() + "\r\n"
                "\r\n" + body;
     }
-
-    if (req.path == "/logout") {
-        if (req.headers.count("Cookie")) {
+	// logout
+    if (req.path == "/logout")
+	{
+        if (req.headers.count("Cookie"))
+		{
             std::string cookie = req.headers.find("Cookie")->second;
             size_t pos = cookie.find("sid=");
+			// delete session from server memory
             if (pos != std::string::npos)
                 sessions.erase(cookie.substr(pos + 4));
         }
@@ -270,24 +276,26 @@ static std::string handleSessionRoute(const HttpRequest& req) {
                            "</body></html>";
         std::ostringstream len;
         len << body.size();
+		//expire the cookie in the browser
         return "HTTP/1.1 200 OK\r\n"
                "Content-Type: text/html; charset=utf-8\r\n"
                "Set-Cookie: sid=; expires=Thu, 01 Jan 1970 00:00:00 GMT\r\n"
                "Content-Length: " + len.str() + "\r\n"
                "\r\n" + body;
     }
-
-    return ""; // Not a session route
+	// Not a session route
+    return "";
 }
 
-// ── 6. Client data handler ─────────────────────────────────────────────────
-// Receives data from a connected client, parses the request, and sends a response
+//6. Client data handler
 static void handleClientData(size_t& i,
                               std::vector<struct pollfd>& fds,
-                              std::map<int, ClientState>& clients) {
+                              std::map<int, ClientState>& clients)
+{
+	//1. receive data from a connected client
     char buf[4096];
     int  bytes = recv(fds[i].fd, buf, sizeof(buf), 0);
-
+		// simulation of TCP chunks : in real TCP, a single HTTP request might arrive in multiple recv() calls (multuple poll() iterations)
     if (bytes <= 0) {
         std::cout << "Client disconnected fd=" << fds[i].fd << std::endl;
         close(fds[i].fd);
@@ -299,9 +307,10 @@ static void handleClientData(size_t& i,
 
     clients[fds[i].fd].recv_buffer += std::string(buf, bytes);
     std::string& rbuf = clients[fds[i].fd].recv_buffer;
-
-    // Early 413 check: reject oversized body before it is fully received
-    if (rbuf.find("\r\n\r\n") != std::string::npos) {
+	//2. First body size check (in header) and ask the permission
+		// “413 Content Too Large”
+    if (rbuf.find("\r\n\r\n") != std::string::npos)
+	{
         size_t cl_pos = rbuf.find("Content-Length: ");
         if (cl_pos != std::string::npos) {
             size_t cl_end         = rbuf.find("\r\n", cl_pos);
@@ -317,18 +326,19 @@ static void handleClientData(size_t& i,
             }
         }
     }
-
-    if (rbuf.find("Expect: 100-continue") != std::string::npos) {
+		//"Expect: 100-continue" ：the client asking for permission before sending a large body - the server either say "100 Continue" (go ahead) or rejects early with 413; It is purely a bandwidth-saving negotiation before committing to sending a large body
+    if (rbuf.find("Expect: 100-continue") != std::string::npos)
+	{
         std::string cont = "HTTP/1.1 100 Continue\r\n\r\n";
         send(fds[i].fd, cont.c_str(), cont.size(), 0);
     }
-
+	//3. parser complete HTTP request and second body size
     if (!isRequestComplete(rbuf))
         return;
 
     HttpRequest req = parseRequest(rbuf);
 
-    // Post-parse body size check (safety net)
+		//second body size : in body
     if (req.body.size() > clients[fds[i].fd].config->max_body) {
         std::string resp = buildErrorResponse(413, *clients[fds[i].fd].config);
         send(fds[i].fd, resp.c_str(), resp.size(), 0);
@@ -339,15 +349,16 @@ static void handleClientData(size_t& i,
         return;
     }
 
-    // Session routes (/login, /welcome, /logout)
+    //4. Session routes (/login, /welcome, /logout)
     std::string session_resp = handleSessionRoute(req);
-    if (!session_resp.empty()) {
+    if (!session_resp.empty())
+	{
         send(fds[i].fd, session_resp.c_str(), session_resp.size(), 0);
         clients[fds[i].fd].recv_buffer.clear();
         return;
     }
 
-    // Match location from config
+    //5. Match location from config
     LocationConfig* loc = matchLocation(*clients[fds[i].fd].config, req.path);
 
     // if (!loc)
@@ -368,11 +379,10 @@ static void handleClientData(size_t& i,
     // }
 
     LocationConfig* loc_with_slash = matchLocation(*clients[fds[i].fd].config, req.path + "/");
-
+	// This is the information to DEBUG?
     std::cerr << "req.path: [" << req.path << "]" << std::endl;
     std::cerr << "loc: [" << (loc ? loc->path : "NULL") << "]" << std::endl;
     std::cerr << "loc_with_slash: [" << (loc_with_slash ? loc_with_slash->path : "NULL") << "]" << std::endl;
-
 
     if (loc_with_slash)
         loc = loc_with_slash;  // prefer more specific match
@@ -384,8 +394,9 @@ static void handleClientData(size_t& i,
         return;
     }
     
-    // HTTP redirect (301/302)
-    if (loc->redirect_code != 0 && !loc->redirect_url.empty()) {
+    //6. HTTP redirect (301/302) : We should add the 302 part or not?
+    if (loc->redirect_code != 0 && !loc->redirect_url.empty())
+	{
         std::ostringstream oss;
         oss << loc->redirect_code;
         std::string status_text = (loc->redirect_code == 301) ? "Moved Permanently" : "Found";
@@ -397,20 +408,22 @@ static void handleClientData(size_t& i,
         return;
     }
 
-    // Method not allowed check
+    //7. Method not allowed check
     bool method_allowed = false;
-    for (size_t j = 0; j < loc->methods.size(); j++) {
+    for (size_t j = 0; j < loc->methods.size(); j++)
+	{
         if (loc->methods[j] == req.method)
             method_allowed = true;
     }
-    if (!method_allowed) {
+    if (!method_allowed)
+	{
         std::string resp = buildErrorResponse(405, *clients[fds[i].fd].config);
         send(fds[i].fd, resp.c_str(), resp.size(), 0);
         clients[fds[i].fd].recv_buffer.clear();
         return;
     }
 
-    // CGI request
+    //8. CGI request
     if (!loc->cgi_ext.empty() && req.path.find(loc->cgi_ext) != std::string::npos) {
         startCGI(req, *loc, clients[fds[i].fd]);
 
@@ -428,7 +441,7 @@ static void handleClientData(size_t& i,
         return;
     }
 
-    // Normal GET / POST / DELETE request
+    //9. Normal GET / POST / DELETE request
     std::string resp = handleRequest(req, *clients[fds[i].fd].config, *loc);
     send(fds[i].fd, resp.c_str(), resp.size(), 0);
     clients[fds[i].fd].recv_buffer.clear();
