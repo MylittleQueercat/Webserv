@@ -3,10 +3,10 @@
 /*                                                        :::      ::::::::   */
 /*   runServer.cpp                                      :+:      :+:    :+:   */
 /*                                                    +:+ +:+         +:+     */
-/*   By: leticiabi <leticiabi@student.42.fr>        +#+  +:+       +#+        */
+/*   By: hguo <hguo@student.42.fr>                  +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2026/03/30 16:54:54 by jili              #+#    #+#             */
-/*   Updated: 2026/04/05 13:13:13 by leticiabi        ###   ########.fr       */
+/*   Updated: 2026/04/07 17:33:58 by hguo             ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -14,8 +14,8 @@
 
 ClientState::ClientState() : fd(-1), headers_done(false),
                               content_length(0), config(NULL),
-                              cgi_pid(-1), cgi_output_fd(-1), is_cgi(false),
-                              cgi_last_activity(0) {}
+                              cgi_pid(-1), cgi_output_fd(-1), cgi_input_fd(-1), 
+                              is_cgi(false), cgi_last_activity(0) {}
 
 // Global session storage: session_id -> username
 std::map<std::string, std::string> sessions;
@@ -87,6 +87,7 @@ static bool handleCGIPipe(size_t& i,
         cgi_client->cgi_last_activity = time(NULL);
     }
     else if (bytes == 0) {
+        
         // EOF: CGI process exited, all data received
         close(fds[i].fd);
         fds.erase(fds.begin() + i);
@@ -103,6 +104,10 @@ static bool handleCGIPipe(size_t& i,
         if (header_end != std::string::npos) {
             std::string cgi_headers = output.substr(0, header_end);
             std::string body        = output.substr(header_end + 4);
+            
+            std::cerr << "CGI output size: " << output.size() << std::endl;
+            std::cerr << "CGI body size: " << body.size() << std::endl;
+        
             std::ostringstream oss;
             oss << body.size();
 
@@ -307,21 +312,60 @@ static void handleClientData(size_t& i,
 
     clients[fds[i].fd].recv_buffer += std::string(buf, bytes);
     std::string& rbuf = clients[fds[i].fd].recv_buffer;
+
+    // If CGI is running, pipe new data directly
+    if (clients[fds[i].fd].is_cgi && clients[fds[i].fd].cgi_input_fd != -1) {
+        size_t header_end = rbuf.find("\r\n\r\n");
+        if (header_end != std::string::npos) {
+            std::string new_body = rbuf.substr(header_end + 4);
+            if (!new_body.empty()) {
+                clients[fds[i].fd].cgi_body_buffer += new_body;
+                rbuf = rbuf.substr(0, header_end + 4);  // keep only headers
+                clients[fds[i].fd].cgi_last_activity = time(NULL);
+            }
+            bool last_chunk = clients[fds[i].fd].cgi_body_buffer.find("0\r\n\r\n") != std::string::npos;
+            if (last_chunk) {
+                std::string decoded = unchunk(clients[fds[i].fd].cgi_body_buffer);
+                clients[fds[i].fd].cgi_body_buffer.clear();
+                clients[fds[i].fd].send_buffer = decoded;
+                std::string& sbuf = clients[fds[i].fd].send_buffer;
+                int written = write(clients[fds[i].fd].cgi_input_fd, sbuf.c_str(), sbuf.size());
+                if (written > 0)
+                    sbuf = sbuf.substr(written);
+                if (sbuf.empty()) {
+                    close(clients[fds[i].fd].cgi_input_fd);
+                    clients[fds[i].fd].cgi_input_fd = -1;
+                }
+            }
+        }
+        return;  // Don't process as new request
+    }
+    
+    // std::cerr << "recv bytes=" << bytes << " rbuf size=" << rbuf.size() << " is_cgi=" << clients[fds[i].fd].is_cgi << std::endl;
 	//2. First body size check (in header) and ask the permission
 		// “413 Content Too Large”
     if (rbuf.find("\r\n\r\n") != std::string::npos)
 	{
+        //printf("First check");
+        // std::cerr << "=== REQUEST HEADERS ===" << std::endl;
+        // std::cerr << rbuf.substr(0, rbuf.find("\r\n\r\n")) << std::endl;
+        // std::cerr << "=======================" << std::endl;
+        
         size_t cl_pos = rbuf.find("Content-Length: ");
-        if (cl_pos != std::string::npos) {
+        if (cl_pos != std::string::npos) 
+        {
+            printf("————————————————————————First check——————————————");
             size_t cl_end         = rbuf.find("\r\n", cl_pos);
             size_t content_length = atoi(rbuf.substr(cl_pos + 16, cl_end - cl_pos - 16).c_str());
-            if (content_length > clients[fds[i].fd].config->max_body) {
+            if (content_length > clients[fds[i].fd].config->max_body)
+            {
                 std::string resp = buildErrorResponse(413, *clients[fds[i].fd].config);
                 send(fds[i].fd, resp.c_str(), resp.size(), 0);
                 close(fds[i].fd);
                 clients.erase(fds[i].fd);
                 fds.erase(fds.begin() + i);
                 i--;
+                // printf("First check");
                 return;
             }
         }
@@ -332,9 +376,114 @@ static void handleClientData(size_t& i,
         std::string cont = "HTTP/1.1 100 Continue\r\n\r\n";
         send(fds[i].fd, cont.c_str(), cont.size(), 0);
     }
+
+    // Early CGI launch: start CGI as soon as headers are complete
+    if (rbuf.find("\r\n\r\n") != std::string::npos && !clients[fds[i].fd].is_cgi) {
+        HttpRequest req = parseRequest(rbuf);
+        
+        if (req.method == "POST") 
+        {
+            LocationConfig* loc = matchLocation(*clients[fds[i].fd].config, req.path);
+            LocationConfig* loc_with_slash = matchLocation(*clients[fds[i].fd].config, req.path + "/");
+            if (loc_with_slash)
+                loc = loc_with_slash;
+            
+            if (loc && !loc->cgi_ext.empty() && req.path.find(loc->cgi_ext) != std::string::npos) {
+                std::cerr << "Starting CGI for path: " << req.path << std::endl;
+                startCGI(req, *loc, clients[fds[i].fd]);
+                std::cerr << "CGI started, input_fd=" << clients[fds[i].fd].cgi_input_fd 
+                << " output_fd=" << clients[fds[i].fd].cgi_output_fd << std::endl;
+                int input_flags = fcntl(clients[fds[i].fd].cgi_input_fd, F_GETFL, 0);
+                fcntl(clients[fds[i].fd].cgi_input_fd, F_SETFL, input_flags | O_NONBLOCK);
+                int cgi_flags = fcntl(clients[fds[i].fd].cgi_output_fd, F_GETFL, 0);
+                
+                fcntl(clients[fds[i].fd].cgi_output_fd, F_SETFL, cgi_flags | O_NONBLOCK);
+                
+                struct pollfd cgi_pfd;
+                cgi_pfd.fd      = clients[fds[i].fd].cgi_output_fd;
+                cgi_pfd.events  = POLLIN;
+                cgi_pfd.revents = 0;
+                fds.push_back(cgi_pfd);
+
+                struct pollfd cgi_input_pfd;
+                cgi_input_pfd.fd      = clients[fds[i].fd].cgi_input_fd;
+                cgi_input_pfd.events  = POLLOUT;
+                cgi_input_pfd.revents = 0;
+                fds.push_back(cgi_input_pfd);
+                
+                clients[fds[i].fd].cgi_last_activity = time(NULL);
+            }
+        }
+    }
+    
 	//3. parser complete HTTP request and second body size
-    if (!isRequestComplete(rbuf))
+    if (!isRequestComplete(rbuf)) {
+        if (clients[fds[i].fd].is_cgi && clients[fds[i].fd].cgi_input_fd != -1) {
+            size_t header_end = rbuf.find("\r\n\r\n");
+            if (header_end != std::string::npos) {
+                // Move new body data into cgi_body_buffer
+                std::string new_body = rbuf.substr(header_end + 4);
+                if (!new_body.empty()) {
+                    clients[fds[i].fd].cgi_body_buffer += new_body;
+                    rbuf = rbuf.substr(0, header_end + 4);  // keep only headers
+                    clients[fds[i].fd].cgi_last_activity = time(NULL); 
+                    std::cerr << "cgi_body_buffer size: " << clients[fds[i].fd].cgi_body_buffer.size() << std::endl;
+                }
+
+                    // ✅ 加在这里
+                    if (clients[fds[i].fd].cgi_body_buffer.size() > 100000000) {
+                        std::string& cbuf = clients[fds[i].fd].cgi_body_buffer;
+                        std::cerr << "last 10 bytes: ";
+                        size_t start = cbuf.size() > 10 ? cbuf.size() - 10 : 0;
+                        for (size_t k = start; k < cbuf.size(); k++)
+                            std::cerr << std::hex << (int)(unsigned char)cbuf[k] << " ";
+                        std::cerr << std::endl;
+                        // Also print rbuf
+                        std::cerr << "rbuf last bytes: ";
+                        for (size_t k = 0; k < rbuf.size(); k++)
+                            std::cerr << std::hex << (int)(unsigned char)rbuf[k] << " ";
+                        std::cerr << std::endl;
+                    }
+                
+                // Check if all chunks received
+                bool last_chunk = (clients[fds[i].fd].cgi_body_buffer.find("0\r\n\r\n") != std::string::npos)
+                    || (rbuf.find("0\r\n\r\n") != std::string::npos);
+
+                std::cerr << "rbuf size: " << rbuf.size() << std::endl;
+                std::cerr << "rbuf find 0rn: " << rbuf.find("0\r\n\r\n") << std::endl;
+                
+                std::cerr << "last_chunk: " << last_chunk << std::endl;
+                
+                if (last_chunk) {
+                    // All data received, unchunk and store in send_buffer
+                    std::string decoded = unchunk(clients[fds[i].fd].cgi_body_buffer);
+                    clients[fds[i].fd].cgi_body_buffer.clear();
+                    clients[fds[i].fd].send_buffer = decoded;  // store for POLLOUT writing
+                    
+                    // Try to write as much as possible now
+                    std::string& sbuf = clients[fds[i].fd].send_buffer;
+                    int written = write(clients[fds[i].fd].cgi_input_fd, sbuf.c_str(), sbuf.size());
+                    if (written > 0)
+                        sbuf = sbuf.substr(written);
+                    
+                    // If all written, close pipe
+                    if (sbuf.empty()) {
+                        close(clients[fds[i].fd].cgi_input_fd);
+                        clients[fds[i].fd].cgi_input_fd = -1;
+                    }
+                    // If not all written, POLLOUT will handle the rest (already registered)
+                }
+            }
+        }
         return;
+    }
+
+    if (clients[fds[i].fd].is_cgi && clients[fds[i].fd].cgi_input_fd != -1) {
+        close(clients[fds[i].fd].cgi_input_fd);
+        clients[fds[i].fd].cgi_input_fd = -1;
+        clients[fds[i].fd].recv_buffer.clear();
+        return;  // CGI already handled, nothing more to do
+    }
 
     HttpRequest req = parseRequest(rbuf);
 
@@ -425,17 +574,27 @@ static void handleClientData(size_t& i,
 
     //8. CGI request
     if (!loc->cgi_ext.empty() && req.path.find(loc->cgi_ext) != std::string::npos) {
+        std::cerr << "CGI check: method=" << req.method << " path=" << req.path << std::endl;
         startCGI(req, *loc, clients[fds[i].fd]);
-
+        std::cerr << "IMMEDIATELY after startCGI: cgi_input_fd=" 
+          << clients[fds[i].fd].cgi_input_fd << std::endl;
+        std::cerr << "After startCGI, cgi_input_fd=" << clients[fds[i].fd].cgi_input_fd << std::endl;
+        
+        // ✅ GET 请求没有 body，立刻关闭写端
+        if (req.method == "GET") {
+            std::cerr << "GET request, closing cgi_input_fd" << std::endl;
+            close(clients[fds[i].fd].cgi_input_fd);
+            clients[fds[i].fd].cgi_input_fd = -1;
+        }
+        std::cerr << "Adding cgi_output_fd to poll" << std::endl;
+        
         int cgi_flags = fcntl(clients[fds[i].fd].cgi_output_fd, F_GETFL, 0);
         fcntl(clients[fds[i].fd].cgi_output_fd, F_SETFL, cgi_flags | O_NONBLOCK);
-
         struct pollfd cgi_pfd;
         cgi_pfd.fd      = clients[fds[i].fd].cgi_output_fd;
         cgi_pfd.events  = POLLIN;
         cgi_pfd.revents = 0;
         fds.push_back(cgi_pfd);
-
         clients[fds[i].fd].cgi_last_activity = time(NULL);
         clients[fds[i].fd].recv_buffer.clear();
         return;
@@ -476,7 +635,31 @@ void runServer(std::vector<ServerConfig>& configs) {
 
         checkCGITimeouts(clients, fds);
 
-        for (size_t i = 0; i < fds.size(); i++) {
+        for (size_t i = 0; i < fds.size(); i++)
+        {
+           // ✅ 处理 CGI input pipe 可写事件
+            if (fds[i].revents & POLLOUT) {
+                for (std::map<int, ClientState>::iterator it = clients.begin();
+                    it != clients.end(); ++it) {
+                    if (it->second.cgi_input_fd == fds[i].fd) {
+                        std::string& sbuf = it->second.send_buffer;
+                        if (!sbuf.empty()) {
+                            int written = write(fds[i].fd, sbuf.c_str(), sbuf.size());
+                            if (written > 0)
+                                sbuf = sbuf.substr(written);
+                        }
+                        // if (sbuf.empty()) {
+                        //     close(fds[i].fd);
+                        //     fds.erase(fds.begin() + i);
+                        //     i--;
+                        //     it->second.cgi_input_fd = -1;
+                        // }
+                        break;
+                    }
+                }
+                continue;
+            }
+           
             if (!(fds[i].revents & POLLIN) && !(fds[i].revents & POLLHUP))
                 continue;
 
