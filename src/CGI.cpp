@@ -3,10 +3,10 @@
 /*                                                        :::      ::::::::   */
 /*   CGI.cpp                                            :+:      :+:    :+:   */
 /*                                                    +:+ +:+         +:+     */
-/*   By: leticiabi <leticiabi@student.42.fr>        +#+  +:+       +#+        */
+/*   By: hguo <hguo@student.42.fr>                  +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2026/03/30 16:51:04 by hguo              #+#    #+#             */
-/*   Updated: 2026/04/05 13:07:38 by leticiabi        ###   ########.fr       */
+/*   Updated: 2026/04/07 17:10:38 by hguo             ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -78,16 +78,14 @@ void startCGI(const HttpRequest &req, const LocationConfig &loc, ClientState &cl
         // Parent process: do not wait, just store state
         close(input_pipe[0]);
 
-        // Write POST body to child stdin
-        if (!req.body.empty())
-            write(input_pipe[1], req.body.c_str(), req.body.size());
-        close(input_pipe[1]);
         close(output_pipe[1]);
 
         // Store CGI state in ClientState
         client.cgi_pid       = pid;
         client.cgi_output_fd = output_pipe[0];
+        client.cgi_input_fd  = input_pipe[1];
         client.is_cgi        = true;
+        // std::cerr << "startCGI done: cgi_input_fd=" << client.cgi_input_fd << std::endl;
     }
 }
 
