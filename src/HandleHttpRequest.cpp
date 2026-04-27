@@ -6,7 +6,7 @@
 /*   By: hguo <hguo@student.42.fr>                  +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2026/03/30 16:55:36 by jili              #+#    #+#             */
-/*   Updated: 2026/04/27 15:13:56 by hguo             ###   ########.fr       */
+/*   Updated: 2026/04/27 18:12:27 by hguo             ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -31,39 +31,47 @@ std::string getStatusText(int code)
 //Bulid a complete HTTP error response : It tries to serve a custom HTML error page from disk first, and falls back to a minimal page if none is found
 std::string buildErrorResponse(int code, const ServerConfig &config)
 {
-	// 1. look up the custom error page path
+    // 1. look up the custom error page path
     std::string error_page_path = "";
     if (config.error_pages.count(code))
         error_page_path = config.error_pages.at(code);
     std::string filepath = "./www" + error_page_path;
-	// 2. bulid the status line
+
+    // 2. build the status line
     std::ostringstream oss;
     oss << code;
     std::string status = "HTTP/1.1 " + oss.str() + " " + getStatusText(code) + "\r\n";
-	//3. if the key (error code) exists in the map error_pages, the correspond error_page.html will be transformed into a string, and return a HTTP response
+
+    // 3. custom error page
     if (config.error_pages.count(code))
-	{
+    {
         std::ifstream file(filepath.c_str());
         if (file.is_open())
-		{
-			//one liner that reads the entire file into a string: std::istreambuf_iterator<char>(file) ->start: beginning of file,  std::istreambuf_iterator<char>() -> end : end of file
-			std::string body((std::istreambuf_iterator<char>(file)),
-                            std::istreambuf_iterator<char>());
+        {
+            std::string body((std::istreambuf_iterator<char>(file)),
+                             std::istreambuf_iterator<char>());
+
             std::ostringstream len;
             len << body.size();
+
             return status +
-                "Content-Type: text/html\r\n"
-                "Content-Length: " + len.str() + "\r\n"
-                "\r\n" + body;
+                   "Content-Type: text/html\r\n"
+                   "Content-Length: " + len.str() + "\r\n"
+                   "Connection: close\r\n"
+                   "\r\n" + body;
         }
     }
-    // File not found or no error_page configured, build and return a minimal error response
+
+    // 4. default error response
     std::string default_body = "<html><body><h1>" + oss.str() + " " + getStatusText(code) + "</h1></body></html>";
+
     std::ostringstream default_len;
     default_len << default_body.size();
+
     return status +
            "Content-Type: text/html\r\n"
            "Content-Length: " + default_len.str() + "\r\n"
+           "Connection: close\r\n"
            "\r\n" + default_body;
 }
 
@@ -159,12 +167,32 @@ std::string handleGET(const HttpRequest &req, const ServerConfig &config, const 
             filepath += '/';
     }
 
-    if (filepath[filepath.size() - 1] == '/') 
+    bool request_ends_with_slash = (!req.path.empty() && req.path[req.path.size() - 1] == '/');
+
+    struct stat path_stat;
+    if (stat(filepath.c_str(), &path_stat) == 0 && S_ISDIR(path_stat.st_mode))
     {
-        if (loc.autoindex)
-            return buildAutoindex(req.path, filepath, config);
+        if (filepath[filepath.size() - 1] != '/')
+            filepath += "/";
+
         std::string index = loc.index.empty() ? "index.html" : loc.index;
-        filepath += index;
+        std::string index_path = filepath + index;
+
+        struct stat index_stat;
+        if (stat(index_path.c_str(), &index_stat) == 0 && S_ISREG(index_stat.st_mode))
+        {
+            filepath = index_path;
+        }
+        else if (loc.autoindex)
+        {
+            return buildAutoindex(req.path, filepath, config);
+        }
+        else
+        {
+            if (request_ends_with_slash)
+                return buildErrorResponse(403, config);
+            return buildErrorResponse(404, config);
+        }
     }
 
     char resolved[PATH_MAX];
@@ -191,11 +219,34 @@ std::string handleGET(const HttpRequest &req, const ServerConfig &config, const 
     std::ostringstream response;
     std::string ContentType = getContentType(resolved); 
     response << "HTTP/1.1 200 OK\r\n";
-    response << "Content-Type:" << ContentType << "\r\n";
+    response << "Content-Type: " << ContentType << "\r\n";
     response << "Content-Length: " << body.size() << "\r\n";
     response << "\r\n";
     response << body;
     return response.str();
+}
+
+static std::string getUploadFilePath(const HttpRequest& req, const LocationConfig& loc)
+{
+    std::string relative = req.path;
+
+    if (relative.find(loc.path) == 0)
+        relative = relative.substr(loc.path.length());
+
+    while (!relative.empty() && relative[0] == '/')
+        relative.erase(0, 1);
+
+    if (relative.empty())
+        relative = "uploaded_file";
+
+    if (relative.find("..") != std::string::npos)
+        return "";
+
+    std::string base = loc.upload_store;
+    if (!base.empty() && base[base.length() - 1] != '/')
+        base += "/";
+
+    return base + relative;
 }
 
 std::string handlePOST(const HttpRequest &req, const ServerConfig &config, const LocationConfig &loc)
@@ -211,7 +262,9 @@ std::string handlePOST(const HttpRequest &req, const ServerConfig &config, const
     if (req.body.size() > 1 * 1024 * 1024)
         return buildErrorResponse(413, config);
 
-    std::string filepath = loc.upload_store + "/uploaded_file";
+    std::string filepath = getUploadFilePath(req, loc);
+    if (filepath.empty())
+        return buildErrorResponse(403, config);
     std::ofstream outfile(filepath.c_str());
     if (!outfile.is_open())
         return buildErrorResponse(500, config);
@@ -225,26 +278,47 @@ std::string handlePOST(const HttpRequest &req, const ServerConfig &config, const
            "\r\n";
 }
 
-std::string handleDELETE(const HttpRequest &req, const ServerConfig &config, const LocationConfig &loc)
+std::string handleDELETE(const HttpRequest& req,
+                         const ServerConfig& config,
+                         const LocationConfig& loc)
 {
-    (void)config;
+    std::string filepath;
 
-    std::string filename = req.path.substr(req.path.rfind('/'));
-    std::string filepath = loc.upload_store + filename;
-    char resolved[PATH_MAX];
-    if (realpath(filepath.c_str(), resolved) == NULL)
-        return buildErrorResponse(404, config);
-
-    char root[PATH_MAX];
-    realpath(loc.upload_store.c_str(), root);
-    if (std::string(resolved).find(root) != 0)
-        return buildErrorResponse(403, config);
-
-    if (remove(resolved) == 0)
-        return "HTTP/1.1 204 No Content\r\n"
-               "Content-Length: 0\r\n\r\n";
+    if (!loc.upload_store.empty())
+    {
+        filepath = getUploadFilePath(req, loc);
+        if (filepath.empty())
+            return buildErrorResponse(403, config);
+    }
     else
-        return buildErrorResponse(404, config);
+    {
+        std::string base = loc.root.empty() ? config.root : loc.root;
+        std::string relative = req.path;
+
+        if (relative.find(loc.path) == 0)
+            relative = relative.substr(loc.path.length());
+
+        while (!relative.empty() && relative[0] == '/')
+            relative.erase(0, 1);
+
+        if (relative.find("..") != std::string::npos)
+            return buildErrorResponse(403, config);
+
+        if (!base.empty() && base[base.length() - 1] != '/')
+            base += "/";
+
+        filepath = base + relative;
+    }
+
+    if (remove(filepath.c_str()) == 0)
+    {
+        return "HTTP/1.1 204 No Content\r\n"
+               "Content-Length: 0\r\n"
+               "Connection: close\r\n"
+               "\r\n";
+    }
+
+    return buildErrorResponse(404, config);
 }
 
 std::string handleRequest(const HttpRequest &req, const ServerConfig &config, const LocationConfig &loc)

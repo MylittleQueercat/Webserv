@@ -6,7 +6,7 @@
 /*   By: hguo <hguo@student.42.fr>                  +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2026/03/30 16:51:04 by hguo              #+#    #+#             */
-/*   Updated: 2026/04/27 15:13:21 by hguo             ###   ########.fr       */
+/*   Updated: 2026/04/27 17:19:40 by hguo             ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -185,22 +185,12 @@ void startCGI(const HttpRequest &req, const LocationConfig &loc, ClientState &cl
         close(input_pipe[0]);
         close(output_pipe[1]);
 
+        (void)keep_stdin_open;
+
         client.cgi_pid        = pid;
         client.cgi_output_fd  = output_pipe[0];
+        client.cgi_input_fd   = input_pipe[1];
         client.is_cgi         = true;
-
-        if (keep_stdin_open)
-        {
-            client.cgi_input_fd = input_pipe[1];
-        }
-        else
-        {
-            if (!req.body.empty())
-                write(input_pipe[1], req.body.c_str(), req.body.size());
-
-            close(input_pipe[1]);
-            client.cgi_input_fd = -1;
-        }
     }
 }
 

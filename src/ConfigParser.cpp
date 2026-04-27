@@ -6,7 +6,7 @@
 /*   By: hguo <hguo@student.42.fr>                  +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2026/03/30 16:51:56 by hguo              #+#    #+#             */
-/*   Updated: 2026/04/27 12:40:21 by hguo             ###   ########.fr       */
+/*   Updated: 2026/04/27 17:40:26 by hguo             ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -174,19 +174,37 @@ std::vector<ServerConfig> parseConfigs(const std::string &filename) {
 
 //matchLocation scans location entries(in the file.conf) and returns a pointer to the best matching LocationConfig for a given request path. If nothing matches, it returns NULL.
 //longest prefix matcher : it loops through all locations and picks the one whose path is the longest prefix of the request path; Since every path starts with /, the root location always matches as a minimum fallback
-LocationConfig* matchLocation(ServerConfig &config, const std::string &path) {
-    LocationConfig* best_match = NULL;
-    size_t best_length = 0;
+LocationConfig* matchLocation(ServerConfig& config, const std::string& path)
+{
+    LocationConfig* best = NULL;
+    size_t best_len = 0;
 
-    for (size_t i = 0; i < config.locations.size(); i++) {
-        std::string loc_path = config.locations[i].path;
+    for (size_t i = 0; i < config.locations.size(); i++)
+    {
+        LocationConfig& loc = config.locations[i];
+        const std::string& prefix = loc.path;
 
-        if (path.substr(0, loc_path.size()) == loc_path) {
-            if (loc_path.size() > best_length) {
-                best_match = &config.locations[i];
-                best_length = loc_path.size();
-            }
-        } 
+        bool matched = false;
+
+        if (prefix == "/")
+            matched = true;
+        else if (path == prefix)
+            matched = true;
+        else if (path.size() > prefix.size()
+                 && path.compare(0, prefix.size(), prefix) == 0
+                 && path[prefix.size()] == '/')
+            matched = true;
+        else if (!prefix.empty()
+                 && prefix[prefix.size() - 1] == '/'
+                 && path.compare(0, prefix.size(), prefix) == 0)
+            matched = true;
+
+        if (matched && prefix.size() > best_len)
+        {
+            best = &loc;
+            best_len = prefix.size();
+        }
     }
-    return best_match;
+
+    return best;
 }

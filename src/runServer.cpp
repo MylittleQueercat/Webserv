@@ -6,7 +6,7 @@
 /*   By: hguo <hguo@student.42.fr>                  +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2026/03/30 16:54:54 by jili              #+#    #+#             */
-/*   Updated: 2026/04/27 17:12:16 by hguo             ###   ########.fr       */
+/*   Updated: 2026/04/27 17:46:19 by hguo             ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -461,10 +461,7 @@ static bool acceptNewClient(size_t i,
 
     int client_fd = accept(fds[i].fd, NULL, NULL);
     if (client_fd < 0)
-	{
-        std::cerr << "accept() failed" << std::endl;
         return true;
-    }
 	//O_NONBLOCK tells the OS never to freeze your program waiting for I/O — if nothing is ready, return immediately with EAGAIN so your program can go do something else
     int flags = fcntl(client_fd, F_GETFL, 0);
     fcntl(client_fd, F_SETFL, flags | O_NONBLOCK);
@@ -807,21 +804,36 @@ static void handleClientData(size_t& i,
 
     //8. CGI request
     if (req.method == "POST" &&
-    !loc->cgi_ext.empty() &&
-    req.path.find(loc->cgi_ext) != std::string::npos) {
-        startCGI(req, *loc, clients[fds[i].fd], false);
+        !loc->cgi_ext.empty() &&
+        req.path.find(loc->cgi_ext) != std::string::npos)
+    {
+        ClientState& cgi_client = clients[fds[i].fd];
 
-        int cgi_flags = fcntl(clients[fds[i].fd].cgi_output_fd, F_GETFL, 0);
-        fcntl(clients[fds[i].fd].cgi_output_fd, F_SETFL, cgi_flags | O_NONBLOCK);
+        startCGI(req, *loc, cgi_client, false);
 
-        struct pollfd cgi_pfd;
-        cgi_pfd.fd      = clients[fds[i].fd].cgi_output_fd;
-        cgi_pfd.events  = POLLIN;
-        cgi_pfd.revents = 0;
-        fds.push_back(cgi_pfd);
+        int out_flags = fcntl(cgi_client.cgi_output_fd, F_GETFL, 0);
+        fcntl(cgi_client.cgi_output_fd, F_SETFL, out_flags | O_NONBLOCK);
 
-        clients[fds[i].fd].cgi_last_activity = time(NULL);
-        clients[fds[i].fd].recv_buffer.clear();
+        int in_flags = fcntl(cgi_client.cgi_input_fd, F_GETFL, 0);
+        fcntl(cgi_client.cgi_input_fd, F_SETFL, in_flags | O_NONBLOCK);
+
+        struct pollfd output_pfd;
+        output_pfd.fd      = cgi_client.cgi_output_fd;
+        output_pfd.events  = POLLIN;
+        output_pfd.revents = 0;
+        fds.push_back(output_pfd);
+
+        cgi_client.cgi_stdin_buffer = req.body;
+        cgi_client.cgi_stdin_sent = 0;
+
+        struct pollfd input_pfd;
+        input_pfd.fd      = cgi_client.cgi_input_fd;
+        input_pfd.events  = POLLOUT;
+        input_pfd.revents = 0;
+        fds.push_back(input_pfd);
+
+        cgi_client.cgi_last_activity = time(NULL);
+        cgi_client.recv_buffer.clear();
         return;
     }
 
