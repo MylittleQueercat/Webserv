@@ -6,7 +6,7 @@
 /*   By: hguo <hguo@student.42.fr>                  +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2026/03/30 16:54:54 by jili              #+#    #+#             */
-/*   Updated: 2026/04/27 16:43:29 by hguo             ###   ########.fr       */
+/*   Updated: 2026/04/27 17:12:16 by hguo             ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -271,10 +271,33 @@ static bool handleClientWrite(size_t& i,
 
     if (client.send_offset >= client.send_buffer.size())
     {
-        close(client.fd);
-        clients.erase(client.fd);
-        fds.erase(fds.begin() + i);
-        i--;
+        bool close_after_send = false;
+
+        size_t header_end = client.send_buffer.find("\r\n\r\n");
+        std::string headers;
+        if (header_end != std::string::npos)
+            headers = client.send_buffer.substr(0, header_end);
+        else
+            headers = client.send_buffer;
+
+        headers = toLowerCopy(headers);
+        if (headers.find("connection: close") != std::string::npos)
+            close_after_send = true;
+
+        std::string().swap(client.send_buffer);
+        client.send_offset = 0;
+
+        if (close_after_send)
+        {
+            close(client.fd);
+            clients.erase(client.fd);
+            fds.erase(fds.begin() + i);
+            i--;
+            return true;
+        }
+
+        fds[i].events &= ~POLLOUT;
+        fds[i].events |= POLLIN;
         return true;
     }
 
@@ -629,11 +652,8 @@ static void handleClientData(size_t& i,
             size_t content_length = atoi(rbuf.substr(cl_pos + 16, cl_end - cl_pos - 16).c_str());
             if (content_length > clients[fds[i].fd].config->max_body) {
                 std::string resp = buildErrorResponse(413, *clients[fds[i].fd].config);
-                send(fds[i].fd, resp.c_str(), resp.size(), 0);
-                close(fds[i].fd);
-                clients.erase(fds[i].fd);
-                fds.erase(fds.begin() + i);
-                i--;
+                queueClientResponse(clients[fds[i].fd], fds, resp);
+                clients[fds[i].fd].recv_buffer.clear();
                 return;
             }
         }
@@ -728,11 +748,8 @@ static void handleClientData(size_t& i,
 		//second body size : in body
     if (req.body.size() > clients[fds[i].fd].config->max_body) {
         std::string resp = buildErrorResponse(413, *clients[fds[i].fd].config);
-        send(fds[i].fd, resp.c_str(), resp.size(), 0);
-        close(fds[i].fd);
-        clients.erase(fds[i].fd);
-        fds.erase(fds.begin() + i);
-        i--;
+        queueClientResponse(clients[fds[i].fd], fds, resp);
+        clients[fds[i].fd].recv_buffer.clear();
         return;
     }
 
@@ -740,7 +757,7 @@ static void handleClientData(size_t& i,
     std::string session_resp = handleSessionRoute(req);
     if (!session_resp.empty())
 	{
-        send(fds[i].fd, session_resp.c_str(), session_resp.size(), 0);
+        queueClientResponse(clients[fds[i].fd], fds, session_resp);
         clients[fds[i].fd].recv_buffer.clear();
         return;
     }
@@ -754,7 +771,7 @@ static void handleClientData(size_t& i,
 
     if (!loc) {
         std::string resp = buildErrorResponse(404, *clients[fds[i].fd].config);
-        send(fds[i].fd, resp.c_str(), resp.size(), 0);
+        queueClientResponse(clients[fds[i].fd], fds, resp);
         clients[fds[i].fd].recv_buffer.clear();
         return;
     }
@@ -768,7 +785,7 @@ static void handleClientData(size_t& i,
         std::string resp = "HTTP/1.1 " + oss.str() + " " + status_text + "\r\n"
                            "Location: " + loc->redirect_url + "\r\n"
                            "Content-Length: 0\r\n\r\n";
-        send(fds[i].fd, resp.c_str(), resp.size(), 0);
+        queueClientResponse(clients[fds[i].fd], fds, resp);
         clients[fds[i].fd].recv_buffer.clear();
         return;
     }
@@ -783,7 +800,7 @@ static void handleClientData(size_t& i,
     if (!method_allowed)
 	{
         std::string resp = buildErrorResponse(405, *clients[fds[i].fd].config);
-        send(fds[i].fd, resp.c_str(), resp.size(), 0);
+        queueClientResponse(clients[fds[i].fd], fds, resp);
         clients[fds[i].fd].recv_buffer.clear();
         return;
     }
@@ -817,19 +834,16 @@ static void handleClientData(size_t& i,
     if (req.body.size() > max_body)
     {
         std::string resp = buildErrorResponse(413, *clients[fds[i].fd].config);
-        send(fds[i].fd, resp.c_str(), resp.size(), 0);
-
-        close(fds[i].fd);
-        clients.erase(fds[i].fd);
-        fds.erase(fds.begin() + i);
-        i--;
+        queueClientResponse(clients[fds[i].fd], fds, resp);
+        clients[fds[i].fd].recv_buffer.clear();
         return;
     }
     
     //9. Normal GET / POST / DELETE request
     std::string resp = handleRequest(req, *clients[fds[i].fd].config, *loc);
-    send(fds[i].fd, resp.c_str(), resp.size(), 0);
+    queueClientResponse(clients[fds[i].fd], fds, resp);
     clients[fds[i].fd].recv_buffer.clear();
+    return;
 }
 
 // ── Main server loop ───────────────────────────────────────────────────────
