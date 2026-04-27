@@ -467,6 +467,7 @@ static bool acceptNewClient(size_t i,
     fcntl(client_fd, F_SETFL, flags | O_NONBLOCK);
 	//Add the new Client into the poll() listening list 
     struct pollfd client_pfd;
+    memset(&client_pfd, 0, sizeof(client_pfd));
     client_pfd.fd      = client_fd;
     client_pfd.events  = POLLIN;
     client_pfd.revents = 0;
@@ -628,6 +629,7 @@ static void handleClientData(size_t& i,
             std::string().swap(client.cgi_body_buffer);
 
             struct pollfd input_pfd;
+            memset(&input_pfd, 0, sizeof(input_pfd));
             input_pfd.fd = client.cgi_input_fd;
             input_pfd.events = POLLOUT;
             input_pfd.revents = 0;
@@ -701,6 +703,7 @@ static void handleClientData(size_t& i,
                 fcntl(client.cgi_input_fd, F_SETFL, in_flags | O_NONBLOCK);
 
                 struct pollfd cgi_pfd;
+                memset(&cgi_pfd, 0, sizeof(cgi_pfd));
                 cgi_pfd.fd      = client.cgi_output_fd;
                 cgi_pfd.events  = POLLIN;
                 cgi_pfd.revents = 0;
@@ -803,16 +806,29 @@ static void handleClientData(size_t& i,
     }
 
     //8. CGI request
-    if (req.method == "POST" &&
-        !loc->cgi_ext.empty() &&
-        req.path.find(loc->cgi_ext) != std::string::npos)
-    {
+// <<<<<<< Updated upstream
+//     if (req.method == "POST" &&
+//         !loc->cgi_ext.empty() &&
+//         req.path.find(loc->cgi_ext) != std::string::npos)
+//     {
+//         ClientState& cgi_client = clients[fds[i].fd];
+// =======
+    if ((req.method == "POST") &&
+    !loc->cgi_ext.empty() &&
+    req.path.find(loc->cgi_ext) != std::string::npos) {
+        // startCGI(req, *loc, clients[fds[i].fd], false);
         ClientState& cgi_client = clients[fds[i].fd];
-
         startCGI(req, *loc, cgi_client, false);
+
 
         int out_flags = fcntl(cgi_client.cgi_output_fd, F_GETFL, 0);
         fcntl(cgi_client.cgi_output_fd, F_SETFL, out_flags | O_NONBLOCK);
+        struct pollfd cgi_pfd;
+        memset(&cgi_pfd, 0, sizeof(cgi_pfd));
+        cgi_pfd.fd      = clients[fds[i].fd].cgi_output_fd;
+        cgi_pfd.events  = POLLIN;
+        cgi_pfd.revents = 0;
+        fds.push_back(cgi_pfd);
 
         int in_flags = fcntl(cgi_client.cgi_input_fd, F_GETFL, 0);
         fcntl(cgi_client.cgi_input_fd, F_SETFL, in_flags | O_NONBLOCK);
@@ -871,7 +887,10 @@ void runServer(std::vector<ServerConfig>& configs) {
     //           << " root=" << configs[s].root << std::endl;
     // Register all server sockets
     for (size_t i = 0; i < configs.size(); i++) {
+        if (configs[i].server_fd <= 0)
+            continue;
         struct pollfd pfd;
+        memset(&pfd, 0, sizeof(pfd));
         pfd.fd      = configs[i].server_fd;
         pfd.events  = POLLIN;
         pfd.revents = 0;

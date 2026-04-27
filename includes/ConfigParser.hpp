@@ -58,7 +58,7 @@ struct ServerConfig {
     size_t                       max_body;    // 1048576 (1m)
     std::vector<LocationConfig>  locations;
 
-    ServerConfig() : port(80), max_body(1048576) {}
+    ServerConfig() : port(80), server_fd(-1), max_body(1048576){}
 };
 
 std::vector<ServerConfig>    parseConfigs(const std::string &filename);
