@@ -6,7 +6,7 @@
 /*   By: hguo <hguo@student.42.fr>                  +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2026/03/30 16:55:36 by jili              #+#    #+#             */
-/*   Updated: 2026/04/27 12:30:38 by hguo             ###   ########.fr       */
+/*   Updated: 2026/04/27 14:57:43 by hguo             ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -150,17 +150,7 @@ std::string handleGET(const HttpRequest &req, const ServerConfig &config, const 
     if (relative_path.empty())
         relative_path = "/";
 
-    // if (!loc.path.empty() && relative_path.find(loc.path) == 0)
-    //     relative_path = relative_path.substr(loc.path.size() - 1); // keep leading /
-
     std::string filepath = base + relative_path;
-    
-    // std::string filepath = base + req.path;
-    
-    //commentaires
-    std::cerr << "DEBUG filepath: [" << filepath << "]" << std::endl;
-    std::cerr << "DEBUG loc.root: [" << loc.root << "]" << std::endl;
-    std::cerr << "DEBUG config.root: [" << config.root << "]" << std::endl;
     
     if (filepath[filepath.size() - 1] != '/') 
     {
@@ -184,7 +174,6 @@ std::string handleGET(const HttpRequest &req, const ServerConfig &config, const 
     char root[PATH_MAX];
     std::string root_to_check = loc.root.empty() ? config.root : loc.root;
     realpath(root_to_check.c_str(), root);
-    // realpath(config.root.c_str(), root);
     std::string root_str(root);
     if (root_str[root_str.size() - 1] != '/')
         root_str += '/';

@@ -6,7 +6,7 @@
 /*   By: hguo <hguo@student.42.fr>                  +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2026/03/30 16:54:54 by jili              #+#    #+#             */
-/*   Updated: 2026/04/27 14:37:05 by hguo             ###   ########.fr       */
+/*   Updated: 2026/04/27 14:59:41 by hguo             ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -65,12 +65,6 @@ static bool methodAllowed(LocationConfig* loc, const std::string& method)
     }
     return false;
 }
-
-// static bool isChunkedBodyComplete(const std::string& body)
-// {
-//     return body.find("\r\n0\r\n\r\n") != std::string::npos ||
-//            body.find("0\r\n\r\n") == 0;
-// }
 
 static bool endsWith(const std::string& s, const std::string& suffix)
 {
@@ -244,21 +238,6 @@ static std::string normalizeCgiHeaders(const std::string& raw_headers)
     return result;
 }
 
-// static std::string buildLocationFilePath(const HttpRequest& req,
-//                                          const LocationConfig& loc)
-// {
-//     std::string base = loc.root.empty() ? "./www" : loc.root;
-//     std::string relative_path = req.path;
-
-//     if (relative_path.find(loc.path) == 0)
-//         relative_path = relative_path.substr(loc.path.length());
-
-//     if (!base.empty() && base[base.length() - 1] != '/')
-//         base += "/";
-
-//     return base + relative_path;
-// }
-
 static bool handleClientWrite(size_t& i,
                               std::vector<struct pollfd>& fds,
                               std::map<int, ClientState>& clients)
@@ -283,16 +262,6 @@ static bool handleClientWrite(size_t& i,
     if (sent > 0)
     {
         client.send_offset += static_cast<size_t>(sent);
-
-        // if (client.send_offset % (5 * 1024 * 1024) < 65536 ||
-        //     client.send_offset == client.send_buffer.size())
-        // {
-        //     std::cerr << "[HTTP response write] sent="
-        //               << client.send_offset
-        //               << " / "
-        //               << client.send_buffer.size()
-        //               << std::endl;
-        // }
     }
     else
     {
@@ -339,38 +308,19 @@ static bool handleCGIInputPipe(size_t& i,
     if (!cgi_client)
         return false;
 
-    // std::cerr << "[handleCGIInputPipe entered] poll fd="
-    //     << fds[i].fd
-    //     << std::endl;
-
     size_t remaining = cgi_client->cgi_stdin_buffer.size() - cgi_client->cgi_stdin_sent;
     size_t chunk = remaining > 65536 ? 65536 : remaining;
 
     if (chunk > 0)
     {
-
-        // std::cerr << "[CGI stdin before write] fd=" << fds[i].fd
-        //         << " sent=" << cgi_client->cgi_stdin_sent
-        //         << " remaining=" << remaining
-        //         << " chunk=" << chunk
-        //         << std::endl;
-
         ssize_t written = write(fds[i].fd,
                                 cgi_client->cgi_stdin_buffer.data() + cgi_client->cgi_stdin_sent,
                                 chunk);
-
-        // std::cerr << "[CGI stdin after write] written=" << written << std::endl;
 
         if (written > 0)
         {
             cgi_client->cgi_stdin_sent += static_cast<size_t>(written);
             cgi_client->cgi_last_activity = time(NULL);
-
-            // std::cerr << "[CGI stdin write] sent="
-            //         << cgi_client->cgi_stdin_sent
-            //         << " / "
-            //         << cgi_client->cgi_stdin_buffer.size()
-            //         << std::endl;
         }
         else
         {
@@ -389,12 +339,6 @@ static bool handleCGIInputPipe(size_t& i,
         cgi_client->cgi_input_fd = -1;
         std::string().swap(cgi_client->cgi_stdin_buffer);
         cgi_client->cgi_stdin_sent = 0;
-
-        // struct pollfd output_pfd;
-        // output_pfd.fd = cgi_client->cgi_output_fd;
-        // output_pfd.events = POLLIN;
-        // output_pfd.revents = 0;
-        // fds.push_back(output_pfd);
     }
 
     return true;
@@ -420,11 +364,6 @@ static bool handleCGIPipe(size_t& i,
     if (!cgi_client)
         return false;
 
-    // std::cerr << "[CGI stdout handler entered] fd="
-    //           << fds[i].fd
-    //           << " revents=" << fds[i].revents
-    //           << std::endl;
-
     char buf[4096];
     int bytes = read(fds[i].fd, buf, sizeof(buf));
 
@@ -432,11 +371,6 @@ static bool handleCGIPipe(size_t& i,
     {
         cgi_client->cgi_output += std::string(buf, bytes);
         cgi_client->cgi_last_activity = time(NULL);
-
-        // std::cerr << "[CGI stdout read] bytes=" << bytes
-        //           << " total=" << cgi_client->cgi_output.size()
-        //           << std::endl;
-
         return true;
     }
 
@@ -676,18 +610,6 @@ static void handleClientData(size_t& i,
         client.cgi_body_buffer.append(buf, bytes);
         client.cgi_last_activity = time(NULL);
 
-        // static std::map<int, size_t> next_report;
-        // if (next_report[client.fd] == 0)
-        //     next_report[client.fd] = 5 * 1024 * 1024;
-
-        // if (client.cgi_body_buffer.size() >= next_report[client.fd])
-        // {
-        //     std::cerr << "[CGI body accumulate] fd=" << client.fd
-        //             << " total=" << client.cgi_body_buffer.size()
-        //             << std::endl;
-        //     next_report[client.fd] += 5 * 1024 * 1024;
-        // }
-
         if (isChunkedBodyComplete(client.cgi_body_buffer))
         {
             std::cerr << "[CGI body complete] raw size="
@@ -776,34 +698,6 @@ static void handleClientData(size_t& i,
                 !cgi_loc->cgi_ext.empty() &&
                 head_req.path.find(cgi_loc->cgi_ext) != std::string::npos)
             {
-                // std::cerr << "========== RAW CGI HEADER ==========\n"
-                //         << header_part
-                //         << "\n========== END RAW CGI HEADER =========="
-                //         << std::endl;
-
-                // std::cerr << "[CGI header detected] fd=" << client.fd
-                //         << " path=" << head_req.path
-                //         << " location=" << cgi_loc->path
-                //         << std::endl;
-
-                // std::string script_path = buildLocationFilePath(head_req, *cgi_loc);
-
-                // if (access(script_path.c_str(), F_OK) != 0)
-                // {
-                //     std::cerr << "[CGI script not found] path="
-                //             << script_path
-                //             << std::endl;
-
-                //     std::string resp = buildErrorResponse(404, *client.config);
-                //     send(client.fd, resp.c_str(), resp.size(), 0);
-
-                //     close(client.fd);
-                //     clients.erase(client.fd);
-                //     fds.erase(fds.begin() + i);
-                //     i--;
-                //     return;
-                // }
-
                 if (hasExpect100Continue(header_part))
                 {
                     std::string cont = "HTTP/1.1 100 Continue\r\n\r\n";
@@ -812,11 +706,7 @@ static void handleClientData(size_t& i,
                             << " sent=" << sent
                             << std::endl;
                 }
-                // else
-                // {
-                //     std::cerr << "[no Expect header, skip 100 Continue]" << std::endl;
-                // }
-
+                
                 startCGI(head_req, *cgi_loc, client, true);
 
                 int out_flags = fcntl(client.cgi_output_fd, F_GETFL, 0);
@@ -834,10 +724,6 @@ static void handleClientData(size_t& i,
                 std::cerr << "[CGI stdout fd added to poll] fd="
                         << client.cgi_output_fd
                         << std::endl;
-
-                // Do NOT poll CGI output yet.
-                // We will poll it only after body is fully received,
-                // unchunked, written to CGI stdin, and cgi_input_fd is closed.
 
                 client.cgi_last_activity = time(NULL);
                 client.cgi_body_mode = true;
@@ -886,23 +772,6 @@ static void handleClientData(size_t& i,
 
     //5. Match location from config
     LocationConfig* loc = matchLocation(*clients[fds[i].fd].config, req.path);
-
-    // if (!loc)
-    // {
-    //     std::string redirectPath = req.path + "/";
-    //     LocationConfig* locWithSlash = matchLocation(*clients[fds[i].fd].config, redirectPath);
-    //     if (locWithSlash)
-    //     {
-    //         std::string resp = "HTTP/1.1 301 Moved Permanently\r\nLocation: " + redirectPath + "\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
-    //         send(fds[i].fd, resp.c_str(), resp.size(), 0);
-    //         clients[fds[i].fd].recv_buffer.clear();
-    //         return;
-    //     }
-    //     std::string resp = buildErrorResponse(404, *clients[fds[i].fd].config);
-    //     send(fds[i].fd, resp.c_str(), resp.size(), 0);
-    //     clients[fds[i].fd].recv_buffer.clear();
-    //     return;
-    // }
 
     LocationConfig* loc_with_slash = matchLocation(*clients[fds[i].fd].config, req.path + "/");
 	// This is the information to DEBUG?

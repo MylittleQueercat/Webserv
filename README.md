@@ -139,7 +139,7 @@ https://man7.org/linux/man-pages/man2/accept.2.html
 
 ### How AI was used
 
-Claude (Anthropic) was used as a learning and debugging assistant throughout the project:
+Claude was used as a learning and debugging assistant throughout the project:
 
 - **Understanding concepts**: HTTP protocol, CGI communication, non-blocking I/O, poll() event loop, cookie/session mechanics, path traversal attacks.
 - **Debugging**: Identifying bugs such as the missing `POLLHUP` check that caused CGI responses to never arrive, the `cgi_last_activity` uninitialized value causing false timeouts, and the incomplete body reception before request processing.
