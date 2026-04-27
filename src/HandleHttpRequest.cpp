@@ -6,7 +6,7 @@
 /*   By: hguo <hguo@student.42.fr>                  +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2026/03/30 16:55:36 by jili              #+#    #+#             */
-/*   Updated: 2026/04/27 14:57:43 by hguo             ###   ########.fr       */
+/*   Updated: 2026/04/27 15:13:56 by hguo             ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -200,8 +200,6 @@ std::string handleGET(const HttpRequest &req, const ServerConfig &config, const 
 
 std::string handlePOST(const HttpRequest &req, const ServerConfig &config, const LocationConfig &loc)
 {
-    std::cout << "DEBUG upload_store: [" << loc.upload_store << "]" << std::endl;
-
     if (loc.upload_store.empty())
     {
         return "HTTP/1.1 200 OK\r\n"

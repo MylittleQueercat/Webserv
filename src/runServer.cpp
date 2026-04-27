@@ -6,7 +6,7 @@
 /*   By: hguo <hguo@student.42.fr>                  +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2026/03/30 16:54:54 by jili              #+#    #+#             */
-/*   Updated: 2026/04/27 14:59:41 by hguo             ###   ########.fr       */
+/*   Updated: 2026/04/27 15:28:29 by hguo             ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -201,10 +201,6 @@ static void queueClientResponse(ClientState& client,
     client.send_buffer.swap(response);
     client.send_offset = 0;
     enablePollOut(client.fd, fds);
-
-    std::cerr << "[HTTP response queued] fd=" << client.fd
-              << " size=" << client.send_buffer.size()
-              << std::endl;
 }
 
 static std::string normalizeCgiHeaders(const std::string& raw_headers)
@@ -275,10 +271,6 @@ static bool handleClientWrite(size_t& i,
 
     if (client.send_offset >= client.send_buffer.size())
     {
-        std::cerr << "[HTTP response complete] closing client fd="
-                  << client.fd
-                  << std::endl;
-
         close(client.fd);
         clients.erase(client.fd);
         fds.erase(fds.begin() + i);
@@ -330,8 +322,6 @@ static bool handleCGIInputPipe(size_t& i,
 
     if (cgi_client->cgi_stdin_sent >= cgi_client->cgi_stdin_buffer.size())
     {
-        std::cerr << "[CGI stdin complete] closing input fd" << std::endl;
-
         close(fds[i].fd);
         fds.erase(fds.begin() + i);
         i--;
@@ -376,10 +366,6 @@ static bool handleCGIPipe(size_t& i,
 
     if (bytes == 0 || (fds[i].revents & (POLLHUP | POLLERR)))
     {
-        std::cerr << "[CGI stdout EOF] total="
-                  << cgi_client->cgi_output.size()
-                  << std::endl;
-
         close(fds[i].fd);
         fds.erase(fds.begin() + i);
         i--;
@@ -470,9 +456,6 @@ static bool acceptNewClient(size_t i,
     state.fd     = client_fd;
     state.config = fd_to_config[fds[i].fd];
     clients[client_fd] = state;
-
-    std::cout << "New client connected fd=" << client_fd
-              << " port=" << state.config->port << std::endl;
     return true;
 }
 
@@ -595,7 +578,6 @@ static void handleClientData(size_t& i,
     int  bytes = recv(fds[i].fd, buf, sizeof(buf), 0);
 		// simulation of TCP chunks : in real TCP, a single HTTP request might arrive in multiple recv() calls (multuple poll() iterations)
     if (bytes <= 0) {
-        std::cout << "Client disconnected fd=" << fds[i].fd << std::endl;
         close(fds[i].fd);
         clients.erase(fds[i].fd);
         fds.erase(fds.begin() + i);
@@ -612,10 +594,6 @@ static void handleClientData(size_t& i,
 
         if (isChunkedBodyComplete(client.cgi_body_buffer))
         {
-            std::cerr << "[CGI body complete] raw size="
-                    << client.cgi_body_buffer.size()
-                    << std::endl;
-
             if (!unchunkBody(client.cgi_body_buffer, client.cgi_stdin_buffer))
             {
                 std::cerr << "[CGI body error] invalid chunked body" << std::endl;
@@ -624,10 +602,6 @@ static void handleClientData(size_t& i,
                 client.cgi_body_mode = false;
                 return;
             }
-
-            std::cerr << "[CGI body unchunked] decoded size="
-                    << client.cgi_stdin_buffer.size()
-                    << std::endl;
 
             client.cgi_stdin_sent = 0;
             client.cgi_body_mode = false;
@@ -638,12 +612,6 @@ static void handleClientData(size_t& i,
             input_pfd.events = POLLOUT;
             input_pfd.revents = 0;
             fds.push_back(input_pfd);
-
-            std::cerr << "[CGI stdin fd added to poll] fd="
-                << client.cgi_input_fd
-                << " buffer size="
-                << client.cgi_stdin_buffer.size()
-                << std::endl;
         }
 
         return;
@@ -721,10 +689,6 @@ static void handleClientData(size_t& i,
                 cgi_pfd.revents = 0;
                 fds.push_back(cgi_pfd);
 
-                std::cerr << "[CGI stdout fd added to poll] fd="
-                        << client.cgi_output_fd
-                        << std::endl;
-
                 client.cgi_last_activity = time(NULL);
                 client.cgi_body_mode = true;
 
@@ -732,10 +696,6 @@ static void handleClientData(size_t& i,
                 if (!already_received_body.empty())
                 {
                     client.cgi_body_buffer.append(already_received_body);
-                    std::cerr << "[CGI body initial leftover] fd=" << client.fd
-                            << " bytes=" << already_received_body.size()
-                            << " total=" << client.cgi_body_buffer.size()
-                            << std::endl;
                 }
 
                 client.recv_buffer.clear();
@@ -772,12 +732,7 @@ static void handleClientData(size_t& i,
 
     //5. Match location from config
     LocationConfig* loc = matchLocation(*clients[fds[i].fd].config, req.path);
-
     LocationConfig* loc_with_slash = matchLocation(*clients[fds[i].fd].config, req.path + "/");
-	// This is the information to DEBUG?
-    std::cerr << "req.path: [" << req.path << "]" << std::endl;
-    std::cerr << "loc: [" << (loc ? loc->path : "NULL") << "]" << std::endl;
-    std::cerr << "loc_with_slash: [" << (loc_with_slash ? loc_with_slash->path : "NULL") << "]" << std::endl;
 
     if (loc_with_slash)
         loc = loc_with_slash;  // prefer more specific match

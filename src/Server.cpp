@@ -3,19 +3,16 @@
 /*                                                        :::      ::::::::   */
 /*   Server.cpp                                         :+:      :+:    :+:   */
 /*                                                    +:+ +:+         +:+     */
-/*   By: jili <jili@student.42.fr>                  +#+  +:+       +#+        */
+/*   By: hguo <hguo@student.42.fr>                  +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2026/03/30 16:55:44 by jili              #+#    #+#             */
-/*   Updated: 2026/03/30 16:55:45 by jili             ###   ########.fr       */
+/*   Updated: 2026/04/27 15:33:44 by hguo             ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
 #include "../includes/Webserv.hpp"
 
-Server::Server() : server_fd(-1)
-{
-	std::cout << "Server constructor called" << std::endl;
-}
+Server::Server() : server_fd(-1) {}
 
 Server::~Server()
 {
@@ -36,7 +33,6 @@ bool Server::setup(const std::string& ip, int port)
 		std::cerr << "Error : Socket creation failed" << std::endl;
 		return false;
 	}
-	std::cout << "Socket created: " << server_fd << std::endl;
 
 	// 2. set socket options (SO_REUSEADDR: reuse the previous socket address)
 	int opt = 1;//Enable the socket option; opt = 1 or other non-zero value means "turn on" the socket option; opt = 0 means "turn off" the socket option
@@ -64,7 +60,6 @@ bool Server::setup(const std::string& ip, int port)
 		server_fd = -1;
 		return false;
 	}
-	std::cout << "Socket set to non-blocking mode" << std::endl;
 
 	// 4. Configure server's socket address structure
 	struct sockaddr_in address;
@@ -75,7 +70,6 @@ bool Server::setup(const std::string& ip, int port)
 	if (ip.empty() || ip == "0.0.0.0") 
 	{
 		address.sin_addr.s_addr = INADDR_ANY;
-		std::cout << "Binding to all interfaces (0.0.0.0)" << std::endl;
     } 
 	else 
 	{
@@ -96,7 +90,6 @@ bool Server::setup(const std::string& ip, int port)
         server_fd = -1;
         return false;
     }
-    std::cout << "Socket bound to port: " << port << std::endl;
     
     // 6. Start listening
     if (listen(server_fd, 128) < 0) {
@@ -105,7 +98,6 @@ bool Server::setup(const std::string& ip, int port)
         server_fd = -1;
         return false;
     }
-    std::cout << "Server listening (backlog: 128)" << std::endl;
     
     std::cout << "✅ Server setup complete on " << ip << ":" << port << std::endl;
     return true;	

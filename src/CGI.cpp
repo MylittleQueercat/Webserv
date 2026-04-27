@@ -6,7 +6,7 @@
 /*   By: hguo <hguo@student.42.fr>                  +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2026/03/30 16:51:04 by hguo              #+#    #+#             */
-/*   Updated: 2026/04/27 12:24:57 by hguo             ###   ########.fr       */
+/*   Updated: 2026/04/27 15:13:21 by hguo             ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -131,21 +131,6 @@ void startCGI(const HttpRequest &req, const LocationConfig &loc, ClientState &cl
             env.push_back(const_cast<char*>(env_strings[i].c_str()));
         env.push_back(NULL);
 
-        std::cerr << "[CGI execve try] interpreter_path=[" << interpreter_path
-                << "] scriptpath=[" << scriptpath << "]" << std::endl;
-
-        std::cerr << "[CGI env]" << std::endl;
-        for (size_t i = 0; i < env_strings.size(); i++)
-        {
-            if (env_strings[i].find("HTTP_") == 0 ||
-                env_strings[i].find("CONTENT_") == 0 ||
-                env_strings[i].find("REQUEST_") == 0 ||
-                env_strings[i].find("SCRIPT_") == 0)
-            {
-                std::cerr << "  " << env_strings[i] << std::endl;
-            }
-        }
-
         execve(interpreter_path.c_str(), args, &env[0]);
 
         std::cerr << "[CGI execve failed] path=[" << interpreter_path
@@ -165,11 +150,6 @@ void startCGI(const HttpRequest &req, const LocationConfig &loc, ClientState &cl
         if (keep_stdin_open)
         {
             client.cgi_input_fd = input_pipe[1];
-
-            std::cerr << "[CGI started streaming] pid=" << pid
-                    << " input_fd=" << client.cgi_input_fd
-                    << " output_fd=" << client.cgi_output_fd
-                    << std::endl;
         }
         else
         {
@@ -178,10 +158,6 @@ void startCGI(const HttpRequest &req, const LocationConfig &loc, ClientState &cl
 
             close(input_pipe[1]);
             client.cgi_input_fd = -1;
-
-            std::cerr << "[CGI started normal] pid=" << pid
-                    << " output_fd=" << client.cgi_output_fd
-                    << std::endl;
         }
     }
 }
