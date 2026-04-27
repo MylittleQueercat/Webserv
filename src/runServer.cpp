@@ -6,7 +6,7 @@
 /*   By: hguo <hguo@student.42.fr>                  +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2026/03/30 16:54:54 by jili              #+#    #+#             */
-/*   Updated: 2026/04/27 15:28:29 by hguo             ###   ########.fr       */
+/*   Updated: 2026/04/27 16:43:29 by hguo             ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -840,9 +840,9 @@ void runServer(std::vector<ServerConfig>& configs) {
     std::map<int, ServerConfig*> fd_to_config;//server fd -> ServerConfig*
 
     for (size_t s = 0; s < configs.size(); s++)
-    std::cerr << "Config " << s << ": port=" << configs[s].port 
-              << " server_name=" << configs[s].server_name 
-              << " root=" << configs[s].root << std::endl;
+    // std::cerr << "Config " << s << ": port=" << configs[s].port 
+    //           << " server_name=" << configs[s].server_name 
+    //           << " root=" << configs[s].root << std::endl;
     // Register all server sockets
     for (size_t i = 0; i < configs.size(); i++) {
         struct pollfd pfd;
