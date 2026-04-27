@@ -6,7 +6,7 @@
 /*   By: hguo <hguo@student.42.fr>                  +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2026/03/30 16:54:54 by jili              #+#    #+#             */
-/*   Updated: 2026/04/27 12:58:23 by hguo             ###   ########.fr       */
+/*   Updated: 2026/04/27 14:37:05 by hguo             ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -66,10 +66,22 @@ static bool methodAllowed(LocationConfig* loc, const std::string& method)
     return false;
 }
 
+// static bool isChunkedBodyComplete(const std::string& body)
+// {
+//     return body.find("\r\n0\r\n\r\n") != std::string::npos ||
+//            body.find("0\r\n\r\n") == 0;
+// }
+
+static bool endsWith(const std::string& s, const std::string& suffix)
+{
+    if (s.size() < suffix.size())
+        return false;
+    return s.compare(s.size() - suffix.size(), suffix.size(), suffix) == 0;
+}
+
 static bool isChunkedBodyComplete(const std::string& body)
 {
-    return body.find("\r\n0\r\n\r\n") != std::string::npos ||
-           body.find("0\r\n\r\n") == 0;
+    return endsWith(body, "\r\n0\r\n\r\n") || endsWith(body, "0\r\n\r\n");
 }
 
 static int hexValue(char c)
@@ -190,9 +202,9 @@ static void enablePollOut(int fd, std::vector<struct pollfd>& fds)
 
 static void queueClientResponse(ClientState& client,
                                 std::vector<struct pollfd>& fds,
-                                const std::string& response)
+                                std::string& response)
 {
-    client.send_buffer = response;
+    client.send_buffer.swap(response);
     client.send_offset = 0;
     enablePollOut(client.fd, fds);
 
@@ -375,7 +387,7 @@ static bool handleCGIInputPipe(size_t& i,
         i--;
 
         cgi_client->cgi_input_fd = -1;
-        cgi_client->cgi_stdin_buffer.clear();
+        std::string().swap(cgi_client->cgi_stdin_buffer);
         cgi_client->cgi_stdin_sent = 0;
 
         // struct pollfd output_pfd;
@@ -458,20 +470,18 @@ static bool handleCGIPipe(size_t& i,
         {
             std::string raw_cgi_headers = output.substr(0, header_end);
             std::string cgi_headers = normalizeCgiHeaders(raw_cgi_headers);
-            std::string body = output.substr(header_end + sep_len);
-
-            std::cerr << "[CGI parsed headers size]=" << raw_cgi_headers.size()
-                    << " body size=" << body.size()
-                    << std::endl;
+            size_t body_start = header_end + sep_len;
+            size_t body_size = output.size() - body_start;
 
             std::ostringstream oss;
-            oss << body.size();
+            oss << body_size;
 
-            response  = "HTTP/1.1 200 OK\r\n";
+            response.reserve(128 + cgi_headers.size() + body_size);
+            response = "HTTP/1.1 200 OK\r\n";
             response += "Connection: close\r\n";
             response += cgi_headers;
             response += "Content-Length: " + oss.str() + "\r\n\r\n";
-            response += body;
+            response.append(output, body_start, body_size);
         }
         else
         {
@@ -489,7 +499,7 @@ static bool handleCGIPipe(size_t& i,
         }
 
         queueClientResponse(*cgi_client, fds, response);
-        cgi_client->cgi_output.clear();
+        std::string().swap(cgi_client->cgi_output);
         return true;
     }
 
@@ -699,7 +709,7 @@ static void handleClientData(size_t& i,
 
             client.cgi_stdin_sent = 0;
             client.cgi_body_mode = false;
-            client.cgi_body_buffer.clear();
+            std::string().swap(client.cgi_body_buffer);
 
             struct pollfd input_pfd;
             input_pfd.fd = client.cgi_input_fd;
