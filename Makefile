@@ -6,7 +6,7 @@
 #    By: hguo <hguo@student.42.fr>                  +#+  +:+       +#+         #
 #                                                 +#+#+#+#+#+   +#+            #
 #    Created: 2026/03/30 16:52:36 by hguo              #+#    #+#              #
-#    Updated: 2026/04/27 16:19:31 by hguo             ###   ########.fr        #
+#    Updated: 2026/04/27 16:39:44 by hguo             ###   ########.fr        #
 #                                                                              #
 # **************************************************************************** #
 
@@ -40,9 +40,9 @@ MAG    = \033[35m
 CYAN   = \033[36m
 WHITE  = \033[37m
 
-all: banner $(NAME)
+all: $(NAME)
 
-banner:
+$(NAME): $(OBJS)
 	@printf "$(CYAN)"
 	@printf "╔══════════════════════════════════════════════════════════════════════════════╗\n"
 	@printf "║                                                                              ║\n"
@@ -64,19 +64,18 @@ banner:
 		sleep 0.015; \
 	done
 	@printf "$(DIM)] ready$(RESET)\n\n"
-
-$(NAME): $(OBJS)
-	@printf "\n$(MAG)╔════════════════════════════════════════════════════════════════════╗$(RESET)\n"
-	@printf "$(MAG)║$(RESET)  $(BOLD)LINKING EXECUTABLE$(RESET)                                                $(MAG)║$(RESET)\n"
-	@printf "$(MAG)║$(RESET)  $(CYAN)$(NAME)$(RESET)                                                           $(MAG)║$(RESET)\n"
-	@printf "$(MAG)╚════════════════════════════════════════════════════════════════════╝$(RESET)\n"
+	
+# 	@printf "\n$(MAG)╔════════════════════════════════════════════════════════════════════╗$(RESET)\n"
+# 	@printf "$(MAG)║$(RESET)  $(BOLD)LINKING EXECUTABLE$(RESET)                                                $(MAG)║$(RESET)\n"
+# 	@printf "$(MAG)║$(RESET)  $(CYAN)$(NAME)$(RESET)                                                           $(MAG)║$(RESET)\n"
+# 	@printf "$(MAG)╚════════════════════════════════════════════════════════════════════╝$(RESET)\n"
 	@$(CXX) $(CXXFLAGS) $(OBJS) -o $(NAME)
-	@printf "\n$(GREEN)"
-	@printf "        ╭────────────────────────────────────────────╮\n"
-	@printf "        │  HTTP/1.1 200 OK                           │\n"
-	@printf "        │  Server binary is ready: %-18s│\n" "$(NAME)"
-	@printf "        ╰────────────────────────────────────────────╯\n"
-	@printf "$(RESET)\n"
+# 	@printf "\n$(GREEN)"
+# 	@printf "        ╭────────────────────────────────────────────╮\n"
+# 	@printf "        │  HTTP/1.1 200 OK                           │\n"
+# 	@printf "        │  Server binary is ready: %-18s│\n" "$(NAME)"
+# 	@printf "        ╰────────────────────────────────────────────╯\n"
+# 	@printf "$(RESET)\n"
 
 $(OBJ_DIR)/%.o: %.cpp
 	@mkdir -p $(dir $@)
