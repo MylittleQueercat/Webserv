@@ -3,19 +3,44 @@
 /*                                                        :::      ::::::::   */
 /*   CGI.cpp                                            :+:      :+:    :+:   */
 /*                                                    +:+ +:+         +:+     */
-/*   By: leticiabi <leticiabi@student.42.fr>        +#+  +:+       +#+        */
+/*   By: hguo <hguo@student.42.fr>                  +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2026/03/30 16:51:04 by hguo              #+#    #+#             */
-/*   Updated: 2026/04/05 13:07:38 by leticiabi        ###   ########.fr       */
+/*   Updated: 2026/04/27 12:24:57 by hguo             ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
 #include "../includes/Webserv.hpp"
 
+static std::string toUpperHeaderName(const std::string& key)
+{
+    std::string result;
+
+    for (size_t i = 0; i < key.size(); i++)
+    {
+        if (key[i] == '-')
+            result += '_';
+        else
+            result += static_cast<char>(std::toupper(static_cast<unsigned char>(key[i])));
+    }
+
+    return result;
+}
+
+static std::string toLowerString(const std::string& s)
+{
+    std::string result = s;
+
+    for (size_t i = 0; i < result.size(); i++)
+        result[i] = static_cast<char>(std::tolower(static_cast<unsigned char>(result[i])));
+
+    return result;
+}
+
 // Forks a child process to execute a CGI script
 // Uses two pipes: input_pipe for sending POST body to the script,
 // output_pipe for reading the script's HTTP response
-void startCGI(const HttpRequest &req, const LocationConfig &loc, ClientState &client) {
+void startCGI(const HttpRequest &req, const LocationConfig &loc, ClientState &client, bool keep_stdin_open) {
     int input_pipe[2];
     int output_pipe[2];
     pipe(input_pipe);
@@ -34,7 +59,15 @@ void startCGI(const HttpRequest &req, const LocationConfig &loc, ClientState &cl
 
         // Build script path using loc.root if set, otherwise default to ./www
         std::string base = loc.root.empty() ? "./www" : loc.root;
-        std::string scriptpath = base + req.path;
+        std::string relative_path = req.path;
+
+        if (relative_path.find(loc.path) == 0)
+            relative_path = relative_path.substr(loc.path.length());
+
+        if (!base.empty() && base[base.length() - 1] != '/')
+            base += "/";
+
+        std::string scriptpath = base + relative_path;
 
         // Select interpreter based on file extension
         std::string interpreter;
@@ -60,34 +93,96 @@ void startCGI(const HttpRequest &req, const LocationConfig &loc, ClientState &cl
         args[1] = (char*)scriptpath.c_str();
         args[2] = NULL;
 
-        std::string method = "REQUEST_METHOD=" + req.method;
-        std::string path   = "PATH_INFO=" + req.path;
-        std::string query  = "QUERY_STRING=";
-        std::string protocol = "SERVER_PROTOCOL=HTTP/1.1";
-        char *env[5];
-        env[0] = (char*)method.c_str();
-        env[1] = (char*)path.c_str();
-        env[2] = (char*)query.c_str();
-        env[3] = (char*)protocol.c_str();
-        env[4] = NULL;
+        std::vector<std::string> env_strings;
 
-        execve(interpreter_path.c_str(), args, env);
+        env_strings.push_back("REQUEST_METHOD=" + req.method);
+        env_strings.push_back("REQUEST_URI=" + req.path);
+        env_strings.push_back("PATH_INFO=" + req.path);
+        env_strings.push_back("SCRIPT_NAME=" + req.path);
+        env_strings.push_back("SCRIPT_FILENAME=" + scriptpath);
+        env_strings.push_back("PATH_TRANSLATED=" + scriptpath);
+        env_strings.push_back("QUERY_STRING=");
+        env_strings.push_back("SERVER_PROTOCOL=HTTP/1.1");
+        env_strings.push_back("GATEWAY_INTERFACE=CGI/1.1");
+        env_strings.push_back("REDIRECT_STATUS=200");
+
+        for (std::map<std::string, std::string>::const_iterator it = req.headers.begin();
+            it != req.headers.end(); ++it)
+        {
+            std::string lower_key = toLowerString(it->first);
+
+            if (lower_key == "content-type")
+            {
+                env_strings.push_back("CONTENT_TYPE=" + it->second);
+            }
+            else if (lower_key == "content-length")
+            {
+                env_strings.push_back("CONTENT_LENGTH=" + it->second);
+            }
+            else
+            {
+                std::string env_name = "HTTP_" + toUpperHeaderName(it->first);
+                env_strings.push_back(env_name + "=" + it->second);
+            }
+        }
+
+        std::vector<char*> env;
+        for (size_t i = 0; i < env_strings.size(); i++)
+            env.push_back(const_cast<char*>(env_strings[i].c_str()));
+        env.push_back(NULL);
+
+        std::cerr << "[CGI execve try] interpreter_path=[" << interpreter_path
+                << "] scriptpath=[" << scriptpath << "]" << std::endl;
+
+        std::cerr << "[CGI env]" << std::endl;
+        for (size_t i = 0; i < env_strings.size(); i++)
+        {
+            if (env_strings[i].find("HTTP_") == 0 ||
+                env_strings[i].find("CONTENT_") == 0 ||
+                env_strings[i].find("REQUEST_") == 0 ||
+                env_strings[i].find("SCRIPT_") == 0)
+            {
+                std::cerr << "  " << env_strings[i] << std::endl;
+            }
+        }
+
+        execve(interpreter_path.c_str(), args, &env[0]);
+
+        std::cerr << "[CGI execve failed] path=[" << interpreter_path
+                << "] errno=" << errno
+                << " error=[" << strerror(errno) << "]"
+                << std::endl;
         exit(1);
     }
     else {
-        // Parent process: do not wait, just store state
         close(input_pipe[0]);
-
-        // Write POST body to child stdin
-        if (!req.body.empty())
-            write(input_pipe[1], req.body.c_str(), req.body.size());
-        close(input_pipe[1]);
         close(output_pipe[1]);
 
-        // Store CGI state in ClientState
-        client.cgi_pid       = pid;
-        client.cgi_output_fd = output_pipe[0];
-        client.is_cgi        = true;
+        client.cgi_pid        = pid;
+        client.cgi_output_fd  = output_pipe[0];
+        client.is_cgi         = true;
+
+        if (keep_stdin_open)
+        {
+            client.cgi_input_fd = input_pipe[1];
+
+            std::cerr << "[CGI started streaming] pid=" << pid
+                    << " input_fd=" << client.cgi_input_fd
+                    << " output_fd=" << client.cgi_output_fd
+                    << std::endl;
+        }
+        else
+        {
+            if (!req.body.empty())
+                write(input_pipe[1], req.body.c_str(), req.body.size());
+
+            close(input_pipe[1]);
+            client.cgi_input_fd = -1;
+
+            std::cerr << "[CGI started normal] pid=" << pid
+                    << " output_fd=" << client.cgi_output_fd
+                    << std::endl;
+        }
     }
 }
 

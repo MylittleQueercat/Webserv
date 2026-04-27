@@ -6,7 +6,7 @@
 /*   By: hguo <hguo@student.42.fr>                  +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2026/03/30 16:50:32 by hguo              #+#    #+#             */
-/*   Updated: 2026/03/30 16:50:39 by hguo             ###   ########.fr       */
+/*   Updated: 2026/04/27 11:17:34 by hguo             ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -17,6 +17,8 @@ int main(int argc, char **argv) {
         std::cerr << "Usage: ./webserv config.conf" << std::endl;
         return 1;
     }
+
+    signal(SIGPIPE, SIG_IGN);
 
     // 1. Parse all server{} blocks
     std::vector<ServerConfig> configs = parseConfigs(argv[1]);

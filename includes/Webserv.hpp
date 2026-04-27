@@ -6,7 +6,7 @@
 /*   By: hguo <hguo@student.42.fr>                  +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2026/03/30 16:54:08 by hguo              #+#    #+#             */
-/*   Updated: 2026/03/30 16:54:09 by hguo             ###   ########.fr       */
+/*   Updated: 2026/04/27 11:17:21 by hguo             ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -31,6 +31,8 @@
 #include <sys/stat.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
+#include <cctype>
+#include <signal.h>
 #include "Client.hpp"
 #include "Http.hpp"
 #include "CGI.hpp"

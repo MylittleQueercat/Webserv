@@ -3,18 +3,29 @@
 /*                                                        :::      ::::::::   */
 /*   runServer.cpp                                      :+:      :+:    :+:   */
 /*                                                    +:+ +:+         +:+     */
-/*   By: leticiabi <leticiabi@student.42.fr>        +#+  +:+       +#+        */
+/*   By: hguo <hguo@student.42.fr>                  +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2026/03/30 16:54:54 by jili              #+#    #+#             */
-/*   Updated: 2026/04/05 13:13:13 by leticiabi        ###   ########.fr       */
+/*   Updated: 2026/04/27 12:58:23 by hguo             ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
 #include "../includes/Webserv.hpp"
 
-ClientState::ClientState() : fd(-1), headers_done(false),
-                              content_length(0), config(NULL),
-                              cgi_pid(-1), cgi_output_fd(-1), is_cgi(false),
+ClientState::ClientState() : fd(-1),
+                              send_offset(0),
+                              headers_done(false),
+                              content_length(0),
+                              config(NULL),
+                              cgi_pid(-1),
+                              cgi_output_fd(-1),
+                              cgi_input_fd(-1),
+                              is_cgi(false),
+                              cgi_body_mode(false),
+                              cgi_body_buffer(""),
+                              cgi_stdin_buffer(""),
+                              cgi_stdin_sent(0),
+                              cgi_output(""),
                               cgi_last_activity(0) {}
 
 // Global session storage: session_id -> username
@@ -29,6 +40,110 @@ static std::string generateSessionId()
     return oss.str();
 }
 
+static std::string toLowerCopy(const std::string& s)
+{
+    std::string out = s;
+    for (size_t i = 0; i < out.size(); i++)
+        out[i] = static_cast<char>(std::tolower(static_cast<unsigned char>(out[i])));
+    return out;
+}
+
+static bool hasChunkedTransferEncoding(const std::string& header_part)
+{
+    std::string lower = toLowerCopy(header_part);
+    return lower.find("transfer-encoding: chunked") != std::string::npos;
+}
+
+static bool methodAllowed(LocationConfig* loc, const std::string& method)
+{
+    if (!loc)
+        return false;
+    for (size_t i = 0; i < loc->methods.size(); i++)
+    {
+        if (loc->methods[i] == method)
+            return true;
+    }
+    return false;
+}
+
+static bool isChunkedBodyComplete(const std::string& body)
+{
+    return body.find("\r\n0\r\n\r\n") != std::string::npos ||
+           body.find("0\r\n\r\n") == 0;
+}
+
+static int hexValue(char c)
+{
+    if (c >= '0' && c <= '9')
+        return c - '0';
+    if (c >= 'a' && c <= 'f')
+        return c - 'a' + 10;
+    if (c >= 'A' && c <= 'F')
+        return c - 'A' + 10;
+    return -1;
+}
+
+static bool parseChunkSize(const std::string& line, size_t& size)
+{
+    size = 0;
+
+    for (size_t i = 0; i < line.size(); i++)
+    {
+        if (line[i] == ';')
+            break;
+
+        int value = hexValue(line[i]);
+        if (value < 0)
+            return false;
+
+        size = size * 16 + static_cast<size_t>(value);
+    }
+    return true;
+}
+
+static bool unchunkBody(const std::string& raw, std::string& decoded)
+{
+    size_t pos = 0;
+    decoded.clear();
+
+    while (pos < raw.size())
+    {
+        size_t line_end = raw.find("\r\n", pos);
+        if (line_end == std::string::npos)
+            return false;
+
+        std::string size_line = raw.substr(pos, line_end - pos);
+        size_t chunk_size = 0;
+
+        if (!parseChunkSize(size_line, chunk_size))
+            return false;
+
+        pos = line_end + 2;
+
+        if (chunk_size == 0)
+            return true;
+
+        if (pos + chunk_size + 2 > raw.size())
+            return false;
+
+        decoded.append(raw, pos, chunk_size);
+        pos += chunk_size;
+
+        if (raw.substr(pos, 2) != "\r\n")
+            return false;
+
+        pos += 2;
+    }
+
+    return false;
+}
+
+static bool hasExpect100Continue(const std::string& header_part)
+{
+    std::string lower = toLowerCopy(header_part);
+    return lower.find("expect: 100-continue") != std::string::npos;
+}
+
 // 1. CGI timeout check : Kills CGI processes that have been running for more than 10 seconds
 static void checkCGITimeouts(std::map<int, ClientState>& clients,
                                std::vector<struct pollfd>& fds) {
@@ -38,7 +153,7 @@ static void checkCGITimeouts(std::map<int, ClientState>& clients,
         if (!c.is_cgi) continue;
         if (c.cgi_last_activity == 0) continue;
 
-        if (difftime(time(NULL), c.cgi_last_activity) > 10) {
+        if (difftime(time(NULL), c.cgi_last_activity) > 60) {
             std::cerr << "CGI timeout: pid=" << c.cgi_pid << std::endl;
 
             kill(c.cgi_pid, SIGKILL);
@@ -61,15 +176,149 @@ static void checkCGITimeouts(std::map<int, ClientState>& clients,
     }
 }
 
-// 2. CGI pipe handler : Returns true if the fd was a CGI pipe and was handled
-static bool handleCGIPipe(size_t& i,
-                           std::vector<struct pollfd>& fds,
-                           std::map<int, ClientState>& clients) {
+static void enablePollOut(int fd, std::vector<struct pollfd>& fds)
+{
+    for (size_t j = 0; j < fds.size(); j++)
+    {
+        if (fds[j].fd == fd)
+        {
+            fds[j].events |= POLLOUT;
+            return;
+        }
+    }
+}
+
+static void queueClientResponse(ClientState& client,
+                                std::vector<struct pollfd>& fds,
+                                const std::string& response)
+{
+    client.send_buffer = response;
+    client.send_offset = 0;
+    enablePollOut(client.fd, fds);
+
+    std::cerr << "[HTTP response queued] fd=" << client.fd
+              << " size=" << client.send_buffer.size()
+              << std::endl;
+}
+
+static std::string normalizeCgiHeaders(const std::string& raw_headers)
+{
+    std::string result;
+    size_t pos = 0;
+
+    while (pos < raw_headers.size())
+    {
+        size_t line_end = raw_headers.find('\n', pos);
+        std::string line;
+
+        if (line_end == std::string::npos)
+        {
+            line = raw_headers.substr(pos);
+            pos = raw_headers.size();
+        }
+        else
+        {
+            line = raw_headers.substr(pos, line_end - pos);
+            pos = line_end + 1;
+        }
+
+        if (!line.empty() && line[line.size() - 1] == '\r')
+            line.erase(line.size() - 1);
+
+        if (!line.empty())
+            result += line + "\r\n";
+    }
+
+    return result;
+}
+
+// static std::string buildLocationFilePath(const HttpRequest& req,
+//                                          const LocationConfig& loc)
+// {
+//     std::string base = loc.root.empty() ? "./www" : loc.root;
+//     std::string relative_path = req.path;
+
+//     if (relative_path.find(loc.path) == 0)
+//         relative_path = relative_path.substr(loc.path.length());
+
+//     if (!base.empty() && base[base.length() - 1] != '/')
+//         base += "/";
+
+//     return base + relative_path;
+// }
+
+static bool handleClientWrite(size_t& i,
+                              std::vector<struct pollfd>& fds,
+                              std::map<int, ClientState>& clients)
+{
+    std::map<int, ClientState>::iterator it = clients.find(fds[i].fd);
+    if (it == clients.end())
+        return false;
+
+    ClientState& client = it->second;
+
+    if (client.send_buffer.empty())
+        return false;
+
+    size_t remaining = client.send_buffer.size() - client.send_offset;
+    size_t chunk = remaining > 65536 ? 65536 : remaining;
+
+    ssize_t sent = send(client.fd,
+                        client.send_buffer.data() + client.send_offset,
+                        chunk,
+                        0);
+
+    if (sent > 0)
+    {
+        client.send_offset += static_cast<size_t>(sent);
+
+        // if (client.send_offset % (5 * 1024 * 1024) < 65536 ||
+        //     client.send_offset == client.send_buffer.size())
+        // {
+        //     std::cerr << "[HTTP response write] sent="
+        //               << client.send_offset
+        //               << " / "
+        //               << client.send_buffer.size()
+        //               << std::endl;
+        // }
+    }
+    else
+    {
+        std::cerr << "[HTTP response write failed]" << std::endl;
+        close(client.fd);
+        clients.erase(client.fd);
+        fds.erase(fds.begin() + i);
+        i--;
+        return true;
+    }
+
+    if (client.send_offset >= client.send_buffer.size())
+    {
+        std::cerr << "[HTTP response complete] closing client fd="
+                  << client.fd
+                  << std::endl;
+
+        close(client.fd);
+        clients.erase(client.fd);
+        fds.erase(fds.begin() + i);
+        i--;
+        return true;
+    }
+
+    return true;
+}
+
+static bool handleCGIInputPipe(size_t& i,
+                               std::vector<struct pollfd>& fds,
+                               std::map<int, ClientState>& clients)
+{
     ClientState* cgi_client = NULL;
 
     for (std::map<int, ClientState>::iterator it = clients.begin();
-         it != clients.end(); ++it) {
-        if (it->second.cgi_output_fd == fds[i].fd) {
+         it != clients.end(); ++it)
+    {
+        if (it->second.cgi_input_fd == fds[i].fd)
+        {
             cgi_client = &it->second;
             break;
         }
@@ -78,67 +327,172 @@ static bool handleCGIPipe(size_t& i,
     if (!cgi_client)
         return false;
 
-    char buf[4096];
-    int  bytes = read(fds[i].fd, buf, sizeof(buf));
+    // std::cerr << "[handleCGIInputPipe entered] poll fd="
+    //     << fds[i].fd
+    //     << std::endl;
 
-    if (bytes > 0) {
-        // Accumulate data and update activity timestamp
+    size_t remaining = cgi_client->cgi_stdin_buffer.size() - cgi_client->cgi_stdin_sent;
+    size_t chunk = remaining > 65536 ? 65536 : remaining;
+
+    if (chunk > 0)
+    {
+
+        // std::cerr << "[CGI stdin before write] fd=" << fds[i].fd
+        //         << " sent=" << cgi_client->cgi_stdin_sent
+        //         << " remaining=" << remaining
+        //         << " chunk=" << chunk
+        //         << std::endl;
+
+        ssize_t written = write(fds[i].fd,
+                                cgi_client->cgi_stdin_buffer.data() + cgi_client->cgi_stdin_sent,
+                                chunk);
+
+        // std::cerr << "[CGI stdin after write] written=" << written << std::endl;
+
+        if (written > 0)
+        {
+            cgi_client->cgi_stdin_sent += static_cast<size_t>(written);
+            cgi_client->cgi_last_activity = time(NULL);
+
+            // std::cerr << "[CGI stdin write] sent="
+            //         << cgi_client->cgi_stdin_sent
+            //         << " / "
+            //         << cgi_client->cgi_stdin_buffer.size()
+            //         << std::endl;
+        }
+        else
+        {
+            std::cerr << "[CGI stdin write failed or would block]" << std::endl;
+        }
+    }
+
+    if (cgi_client->cgi_stdin_sent >= cgi_client->cgi_stdin_buffer.size())
+    {
+        std::cerr << "[CGI stdin complete] closing input fd" << std::endl;
+
+        close(fds[i].fd);
+        fds.erase(fds.begin() + i);
+        i--;
+
+        cgi_client->cgi_input_fd = -1;
+        cgi_client->cgi_stdin_buffer.clear();
+        cgi_client->cgi_stdin_sent = 0;
+
+        // struct pollfd output_pfd;
+        // output_pfd.fd = cgi_client->cgi_output_fd;
+        // output_pfd.events = POLLIN;
+        // output_pfd.revents = 0;
+        // fds.push_back(output_pfd);
+    }
+
+    return true;
+}
+
+// 2. CGI pipe handler : Returns true if the fd was a CGI pipe and was handled
+static bool handleCGIPipe(size_t& i,
+                          std::vector<struct pollfd>& fds,
+                          std::map<int, ClientState>& clients)
+{
+    ClientState* cgi_client = NULL;
+
+    for (std::map<int, ClientState>::iterator it = clients.begin();
+         it != clients.end(); ++it)
+    {
+        if (it->second.cgi_output_fd == fds[i].fd)
+        {
+            cgi_client = &it->second;
+            break;
+        }
+    }
+
+    if (!cgi_client)
+        return false;
+
+    // std::cerr << "[CGI stdout handler entered] fd="
+    //           << fds[i].fd
+    //           << " revents=" << fds[i].revents
+    //           << std::endl;
+
+    char buf[4096];
+    int bytes = read(fds[i].fd, buf, sizeof(buf));
+
+    if (bytes > 0)
+    {
         cgi_client->cgi_output += std::string(buf, bytes);
         cgi_client->cgi_last_activity = time(NULL);
+
+        // std::cerr << "[CGI stdout read] bytes=" << bytes
+        //           << " total=" << cgi_client->cgi_output.size()
+        //           << std::endl;
+
+        return true;
     }
-    else if (bytes == 0) {
-        // EOF: CGI process exited, all data received
+
+    if (bytes == 0 || (fds[i].revents & (POLLHUP | POLLERR)))
+    {
+        std::cerr << "[CGI stdout EOF] total="
+                  << cgi_client->cgi_output.size()
+                  << std::endl;
+
         close(fds[i].fd);
         fds.erase(fds.begin() + i);
         i--;
 
         waitpid(cgi_client->cgi_pid, NULL, WNOHANG);
-        cgi_client->is_cgi        = false;
+        cgi_client->is_cgi = false;
         cgi_client->cgi_output_fd = -1;
 
         std::string& output = cgi_client->cgi_output;
-        std::string  response;
+        std::string response;
 
         size_t header_end = output.find("\r\n\r\n");
-        if (header_end != std::string::npos) {
-            std::string cgi_headers = output.substr(0, header_end);
-            std::string body        = output.substr(header_end + 4);
+        size_t sep_len = 4;
+
+        if (header_end == std::string::npos)
+        {
+            header_end = output.find("\n\n");
+            sep_len = 2;
+        }
+
+        if (header_end != std::string::npos)
+        {
+            std::string raw_cgi_headers = output.substr(0, header_end);
+            std::string cgi_headers = normalizeCgiHeaders(raw_cgi_headers);
+            std::string body = output.substr(header_end + sep_len);
+
+            std::cerr << "[CGI parsed headers size]=" << raw_cgi_headers.size()
+                    << " body size=" << body.size()
+                    << std::endl;
+
             std::ostringstream oss;
             oss << body.size();
 
             response  = "HTTP/1.1 200 OK\r\n";
             response += "Connection: close\r\n";
-            response += cgi_headers + "\r\n";
+            response += cgi_headers;
             response += "Content-Length: " + oss.str() + "\r\n\r\n";
             response += body;
-        } else {
-            // No headers from CGI, treat all output as body
+        }
+        else
+        {
+            std::cerr << "[CGI no header separator found, treating all as body] size="
+                    << output.size()
+                    << std::endl;
+
             std::ostringstream oss;
             oss << output.size();
+
             response  = "HTTP/1.1 200 OK\r\n";
             response += "Connection: close\r\n";
             response += "Content-Length: " + oss.str() + "\r\n\r\n";
             response += output;
         }
 
-        send(cgi_client->fd, response.c_str(), response.size(), 0);
+        queueClientResponse(*cgi_client, fds, response);
         cgi_client->cgi_output.clear();
+        return true;
     }
-    else {
-        // Read error: clean up and send 500
-        close(fds[i].fd);
-        fds.erase(fds.begin() + i);
-        i--;
 
-        kill(cgi_client->cgi_pid, SIGKILL);
-        waitpid(cgi_client->cgi_pid, NULL, WNOHANG);
-        cgi_client->is_cgi        = false;
-        cgi_client->cgi_output_fd = -1;
-
-        std::string err = "HTTP/1.1 500 Internal Server Error\r\n"
-                          "Content-Length: 0\r\n\r\n";
-        send(cgi_client->fd, err.c_str(), err.size(), 0);
-    }
     return true;
 }
 
@@ -305,8 +659,66 @@ static void handleClientData(size_t& i,
         return;
     }
 
-    clients[fds[i].fd].recv_buffer += std::string(buf, bytes);
-    std::string& rbuf = clients[fds[i].fd].recv_buffer;
+    ClientState& client = clients[fds[i].fd];
+
+    if (client.cgi_body_mode)
+    {
+        client.cgi_body_buffer.append(buf, bytes);
+        client.cgi_last_activity = time(NULL);
+
+        // static std::map<int, size_t> next_report;
+        // if (next_report[client.fd] == 0)
+        //     next_report[client.fd] = 5 * 1024 * 1024;
+
+        // if (client.cgi_body_buffer.size() >= next_report[client.fd])
+        // {
+        //     std::cerr << "[CGI body accumulate] fd=" << client.fd
+        //             << " total=" << client.cgi_body_buffer.size()
+        //             << std::endl;
+        //     next_report[client.fd] += 5 * 1024 * 1024;
+        // }
+
+        if (isChunkedBodyComplete(client.cgi_body_buffer))
+        {
+            std::cerr << "[CGI body complete] raw size="
+                    << client.cgi_body_buffer.size()
+                    << std::endl;
+
+            if (!unchunkBody(client.cgi_body_buffer, client.cgi_stdin_buffer))
+            {
+                std::cerr << "[CGI body error] invalid chunked body" << std::endl;
+                close(client.cgi_input_fd);
+                client.cgi_input_fd = -1;
+                client.cgi_body_mode = false;
+                return;
+            }
+
+            std::cerr << "[CGI body unchunked] decoded size="
+                    << client.cgi_stdin_buffer.size()
+                    << std::endl;
+
+            client.cgi_stdin_sent = 0;
+            client.cgi_body_mode = false;
+            client.cgi_body_buffer.clear();
+
+            struct pollfd input_pfd;
+            input_pfd.fd = client.cgi_input_fd;
+            input_pfd.events = POLLOUT;
+            input_pfd.revents = 0;
+            fds.push_back(input_pfd);
+
+            std::cerr << "[CGI stdin fd added to poll] fd="
+                << client.cgi_input_fd
+                << " buffer size="
+                << client.cgi_stdin_buffer.size()
+                << std::endl;
+        }
+
+        return;
+    }
+
+    client.recv_buffer += std::string(buf, bytes);
+    std::string& rbuf = client.recv_buffer;
 	//2. First body size check (in header) and ask the permission
 		// “413 Content Too Large”
     if (rbuf.find("\r\n\r\n") != std::string::npos)
@@ -332,7 +744,111 @@ static void handleClientData(size_t& i,
         std::string cont = "HTTP/1.1 100 Continue\r\n\r\n";
         send(fds[i].fd, cont.c_str(), cont.size(), 0);
     }
-	//3. parser complete HTTP request and second body size
+
+    size_t header_end_for_cgi = rbuf.find("\r\n\r\n");
+
+    if (header_end_for_cgi != std::string::npos)
+    {
+        std::string header_part = rbuf.substr(0, header_end_for_cgi + 4);
+
+        if (hasChunkedTransferEncoding(header_part))
+        {
+            HttpRequest head_req = parseRequest(header_part);
+
+            LocationConfig* cgi_loc = matchLocation(*client.config, head_req.path);
+            LocationConfig* cgi_loc_with_slash = matchLocation(*client.config, head_req.path + "/");
+
+            if (cgi_loc_with_slash)
+                cgi_loc = cgi_loc_with_slash;
+
+            if (cgi_loc &&
+                methodAllowed(cgi_loc, head_req.method) &&
+                !cgi_loc->cgi_ext.empty() &&
+                head_req.path.find(cgi_loc->cgi_ext) != std::string::npos)
+            {
+                // std::cerr << "========== RAW CGI HEADER ==========\n"
+                //         << header_part
+                //         << "\n========== END RAW CGI HEADER =========="
+                //         << std::endl;
+
+                // std::cerr << "[CGI header detected] fd=" << client.fd
+                //         << " path=" << head_req.path
+                //         << " location=" << cgi_loc->path
+                //         << std::endl;
+
+                // std::string script_path = buildLocationFilePath(head_req, *cgi_loc);
+
+                // if (access(script_path.c_str(), F_OK) != 0)
+                // {
+                //     std::cerr << "[CGI script not found] path="
+                //             << script_path
+                //             << std::endl;
+
+                //     std::string resp = buildErrorResponse(404, *client.config);
+                //     send(client.fd, resp.c_str(), resp.size(), 0);
+
+                //     close(client.fd);
+                //     clients.erase(client.fd);
+                //     fds.erase(fds.begin() + i);
+                //     i--;
+                //     return;
+                // }
+
+                if (hasExpect100Continue(header_part))
+                {
+                    std::string cont = "HTTP/1.1 100 Continue\r\n\r\n";
+                    ssize_t sent = send(client.fd, cont.c_str(), cont.size(), 0);
+                    std::cerr << "[100 Continue sent] fd=" << client.fd
+                            << " sent=" << sent
+                            << std::endl;
+                }
+                // else
+                // {
+                //     std::cerr << "[no Expect header, skip 100 Continue]" << std::endl;
+                // }
+
+                startCGI(head_req, *cgi_loc, client, true);
+
+                int out_flags = fcntl(client.cgi_output_fd, F_GETFL, 0);
+                fcntl(client.cgi_output_fd, F_SETFL, out_flags | O_NONBLOCK);
+
+                int in_flags = fcntl(client.cgi_input_fd, F_GETFL, 0);
+                fcntl(client.cgi_input_fd, F_SETFL, in_flags | O_NONBLOCK);
+
+                struct pollfd cgi_pfd;
+                cgi_pfd.fd      = client.cgi_output_fd;
+                cgi_pfd.events  = POLLIN;
+                cgi_pfd.revents = 0;
+                fds.push_back(cgi_pfd);
+
+                std::cerr << "[CGI stdout fd added to poll] fd="
+                        << client.cgi_output_fd
+                        << std::endl;
+
+                // Do NOT poll CGI output yet.
+                // We will poll it only after body is fully received,
+                // unchunked, written to CGI stdin, and cgi_input_fd is closed.
+
+                client.cgi_last_activity = time(NULL);
+                client.cgi_body_mode = true;
+
+                std::string already_received_body = rbuf.substr(header_end_for_cgi + 4);
+                if (!already_received_body.empty())
+                {
+                    client.cgi_body_buffer.append(already_received_body);
+                    std::cerr << "[CGI body initial leftover] fd=" << client.fd
+                            << " bytes=" << already_received_body.size()
+                            << " total=" << client.cgi_body_buffer.size()
+                            << std::endl;
+                }
+
+                client.recv_buffer.clear();
+                return;
+            }
+        }
+    }
+
+    //3. parser complete HTTP request and second body size
     if (!isRequestComplete(rbuf))
         return;
 
@@ -424,8 +940,10 @@ static void handleClientData(size_t& i,
     }
 
     //8. CGI request
-    if (!loc->cgi_ext.empty() && req.path.find(loc->cgi_ext) != std::string::npos) {
-        startCGI(req, *loc, clients[fds[i].fd]);
+    if (req.method == "POST" &&
+    !loc->cgi_ext.empty() &&
+    req.path.find(loc->cgi_ext) != std::string::npos) {
+        startCGI(req, *loc, clients[fds[i].fd], false);
 
         int cgi_flags = fcntl(clients[fds[i].fd].cgi_output_fd, F_GETFL, 0);
         fcntl(clients[fds[i].fd].cgi_output_fd, F_SETFL, cgi_flags | O_NONBLOCK);
@@ -441,6 +959,24 @@ static void handleClientData(size_t& i,
         return;
     }
 
+    // Check body size limit before handling normal request
+    size_t max_body = clients[fds[i].fd].config->max_body;
+
+    if (loc && loc->has_max_body)
+        max_body = loc->max_body;
+
+    if (req.body.size() > max_body)
+    {
+        std::string resp = buildErrorResponse(413, *clients[fds[i].fd].config);
+        send(fds[i].fd, resp.c_str(), resp.size(), 0);
+
+        close(fds[i].fd);
+        clients.erase(fds[i].fd);
+        fds.erase(fds.begin() + i);
+        i--;
+        return;
+    }
+    
     //9. Normal GET / POST / DELETE request
     std::string resp = handleRequest(req, *clients[fds[i].fd].config, *loc);
     send(fds[i].fd, resp.c_str(), resp.size(), 0);
@@ -477,16 +1013,25 @@ void runServer(std::vector<ServerConfig>& configs) {
         checkCGITimeouts(clients, fds);
 
         for (size_t i = 0; i < fds.size(); i++) {
-            if (!(fds[i].revents & POLLIN) && !(fds[i].revents & POLLHUP))
+            if (!(fds[i].revents & (POLLIN | POLLOUT | POLLHUP | POLLERR | POLLNVAL)))
                 continue;
 
-            if (handleCGIPipe(i, fds, clients))
+            if ((fds[i].revents & POLLOUT) && handleCGIInputPipe(i, fds, clients))
                 continue;
 
-            if (acceptNewClient(i, fds, server_fds, clients, fd_to_config))
+            if ((fds[i].revents & POLLOUT) && handleClientWrite(i, fds, clients))
+                continue;
+                
+            if ((fds[i].revents & (POLLIN | POLLHUP | POLLERR)) &&
+                handleCGIPipe(i, fds, clients))
                 continue;
 
-            handleClientData(i, fds, clients);
+            if ((fds[i].revents & POLLIN) &&
+                acceptNewClient(i, fds, server_fds, clients, fd_to_config))
+                continue;
+
+            if (fds[i].revents & POLLIN)
+                handleClientData(i, fds, clients);
         }
     }
 }

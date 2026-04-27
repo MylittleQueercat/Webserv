@@ -3,10 +3,10 @@
 /*                                                        :::      ::::::::   */
 /*   ConfigParser.cpp                                   :+:      :+:    :+:   */
 /*                                                    +:+ +:+         +:+     */
-/*   By: leticiabi <leticiabi@student.42.fr>        +#+  +:+       +#+        */
+/*   By: hguo <hguo@student.42.fr>                  +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2026/03/30 16:51:56 by hguo              #+#    #+#             */
-/*   Updated: 2026/04/05 13:01:00 by leticiabi        ###   ########.fr       */
+/*   Updated: 2026/04/27 12:40:21 by hguo             ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -85,6 +85,12 @@ LocationConfig parseLocation(std::ifstream &file, const std::string &path) {
             std::string val;
             iss >> val;
             loc.root = trim(val);
+        }
+        else if (key == "client_max_body_size") {
+            std::string val;
+            iss >> val;
+            loc.max_body = parseSize(trim(val));
+            loc.has_max_body = true;
         }
     }
     return loc;

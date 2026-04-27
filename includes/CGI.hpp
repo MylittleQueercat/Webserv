@@ -6,7 +6,7 @@
 /*   By: hguo <hguo@student.42.fr>                  +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2026/03/30 16:53:55 by hguo              #+#    #+#             */
-/*   Updated: 2026/03/30 16:53:56 by hguo             ###   ########.fr       */
+/*   Updated: 2026/04/27 10:49:18 by hguo             ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -17,6 +17,6 @@
 # include "ConfigParser.hpp"
 # include "Client.hpp"
 
-void startCGI(const HttpRequest &req, const LocationConfig &loc, ClientState &client);
+void startCGI(const HttpRequest &req, const LocationConfig &loc, ClientState &client, bool keep_stdin_open);
 
 # endif

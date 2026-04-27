@@ -6,7 +6,7 @@
 /*   By: hguo <hguo@student.42.fr>                  +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2026/03/30 16:55:36 by jili              #+#    #+#             */
-/*   Updated: 2026/04/02 13:52:26 by hguo             ###   ########.fr       */
+/*   Updated: 2026/04/27 12:30:38 by hguo             ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -211,12 +211,15 @@ std::string handleGET(const HttpRequest &req, const ServerConfig &config, const 
 
 std::string handlePOST(const HttpRequest &req, const ServerConfig &config, const LocationConfig &loc)
 {
-    (void)config;
-
-
     std::cout << "DEBUG upload_store: [" << loc.upload_store << "]" << std::endl;
-    if (req.body.empty())
-        return buildErrorResponse(400, config);
+
+    if (loc.upload_store.empty())
+    {
+        return "HTTP/1.1 200 OK\r\n"
+               "Content-Length: 0\r\n"
+               "Connection: close\r\n"
+               "\r\n";
+    }
 
     if (req.body.size() > 1 * 1024 * 1024)
         return buildErrorResponse(413, config);
@@ -228,8 +231,11 @@ std::string handlePOST(const HttpRequest &req, const ServerConfig &config, const
 
     outfile.write(req.body.c_str(), req.body.size());
     outfile.close();
+
     return "HTTP/1.1 201 Created\r\n"
-           "Content-Length: 0\r\n\r\n";
+           "Content-Length: 0\r\n"
+           "Connection: close\r\n"
+           "\r\n";
 }
 
 std::string handleDELETE(const HttpRequest &req, const ServerConfig &config, const LocationConfig &loc)

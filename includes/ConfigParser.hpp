@@ -6,7 +6,7 @@
 /*   By: hguo <hguo@student.42.fr>                  +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2026/03/30 16:54:38 by hguo              #+#    #+#             */
-/*   Updated: 2026/03/30 16:54:39 by hguo             ###   ########.fr       */
+/*   Updated: 2026/04/27 12:39:18 by hguo             ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -38,8 +38,14 @@ struct LocationConfig {
     std::string              cgi_ext;
     int                      redirect_code;
     std::string              redirect_url;
+    size_t                   max_body;
+    bool                     has_max_body;
 
-    LocationConfig() : autoindex(false), redirect_code(0) {} 
+
+    LocationConfig() : autoindex(false),
+                       redirect_code(0),
+                       max_body(0),
+                       has_max_body(false) {}
 };
 
 struct ServerConfig {
