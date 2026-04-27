@@ -16,7 +16,9 @@
 # include "Http.hpp"
 # include "ConfigParser.hpp"
 # include "Client.hpp"
-
+void cleanupCGI(ClientState& client,
+                       std::vector<struct pollfd>& fds,
+                       size_t& i);
 void startCGI(const HttpRequest &req, const LocationConfig &loc, ClientState &client, bool keep_stdin_open);
 
 # endif

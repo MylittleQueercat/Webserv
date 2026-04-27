@@ -37,6 +37,48 @@ static std::string toLowerString(const std::string& s)
     return result;
 }
 
+
+void cleanupCGI(ClientState& client,
+                       std::vector<struct pollfd>& fds,
+                       size_t& i)
+{
+    // 关闭并移除 cgi_output_fd（调用者的 fds[i] 就是它，已经处理）
+    if (client.cgi_output_fd != -1) {
+        // 注意：如果调用者已经 close 了就不要重复 close
+        // 统一在这里做，调用者不要单独 close
+        close(client.cgi_output_fd);
+        for (size_t j = 0; j < fds.size(); j++) {
+            if (fds[j].fd == client.cgi_output_fd) {
+                fds.erase(fds.begin() + j);
+                if (j <= i) i--;
+                break;
+            }
+        }
+        client.cgi_output_fd = -1;
+    }
+
+    // 关闭并移除 cgi_input_fd
+    if (client.cgi_input_fd != -1) {
+        close(client.cgi_input_fd);
+        for (size_t j = 0; j < fds.size(); j++) {
+            if (fds[j].fd == client.cgi_input_fd) {
+                fds.erase(fds.begin() + j);
+                if (j <= i) i--;
+                break;
+            }
+        }
+        client.cgi_input_fd = -1;
+    }
+
+    // 回收子进程，避免僵尸进程
+    if (client.cgi_pid > 0) {
+        kill(client.cgi_pid, SIGKILL);
+        waitpid(client.cgi_pid, NULL, 0); // 阻塞等待，确保回收
+        client.cgi_pid = -1;
+    }
+
+    client.is_cgi = false;
+}
 // Forks a child process to execute a CGI script
 // Uses two pipes: input_pipe for sending POST body to the script,
 // output_pipe for reading the script's HTTP response

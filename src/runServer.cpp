@@ -571,7 +571,7 @@ static std::string handleSessionRoute(const HttpRequest& req)
 //6. Client data handler
 static void handleClientData(size_t& i,
                               std::vector<struct pollfd>& fds,
-                              std::map<int, ClientState>& clients)
+                              std::map<int, ClientState>& clients,std::vector<ServerConfig>& configs )
 {
 	//1. receive data from a connected client
     char buf[4096];
@@ -709,6 +709,21 @@ static void handleClientData(size_t& i,
         return;
 
     HttpRequest req = parseRequest(rbuf);
+    if (req.headers.count("Host"))
+    {
+        std::string host = req.headers["Host"];
+        size_t colon = host.find(':');
+        if (colon != std::string::npos)
+            host = host.substr(0, colon);
+        for (size_t s = 0; s < configs.size(); s++)
+        {
+            if (configs[s].server_name == host && configs[s].port == clients[fds[i].fd].config->port)
+            {
+                clients[fds[i].fd].config = &configs[s];
+                break;
+            }
+        }
+    }
 
 		//second body size : in body
     if (req.body.size() > clients[fds[i].fd].config->max_body) {
@@ -824,6 +839,10 @@ void runServer(std::vector<ServerConfig>& configs) {
     std::map<int, ClientState> clients;//client fd-> ClientState
     std::map<int, ServerConfig*> fd_to_config;//server fd -> ServerConfig*
 
+    for (size_t s = 0; s < configs.size(); s++)
+    std::cerr << "Config " << s << ": port=" << configs[s].port 
+              << " server_name=" << configs[s].server_name 
+              << " root=" << configs[s].root << std::endl;
     // Register all server sockets
     for (size_t i = 0; i < configs.size(); i++) {
         struct pollfd pfd;
@@ -865,7 +884,7 @@ void runServer(std::vector<ServerConfig>& configs) {
                 continue;
 
             if (fds[i].revents & POLLIN)
-                handleClientData(i, fds, clients);
+                handleClientData(i, fds, clients, configs);
         }
     }
 }

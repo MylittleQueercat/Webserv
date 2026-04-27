@@ -50,6 +50,7 @@ struct LocationConfig {
 
 struct ServerConfig {
     int                          port;        // 8080
+    std::string                  server_name; // "example.com"
     int                          server_fd;
     std::string                  root;        // "/var/www/html"
     // std::string                  error_page;  // "/404.html"

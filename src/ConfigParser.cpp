@@ -140,6 +140,12 @@ ServerConfig parseServer(std::ifstream &file) {
                 iss >> val;
                 config.max_body = parseSize(trim(val));
             }
+            else if (key == "server_name") {
+                std::string val;
+                iss >> val;
+                config.server_name = trim(val);
+            }
+            
         }
     }
     return config;
