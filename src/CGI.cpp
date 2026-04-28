@@ -103,9 +103,10 @@ void startCGI(const HttpRequest &req, const LocationConfig &loc, ClientState &cl
         std::string base = loc.root.empty() ? "./www" : loc.root;
         std::string relative_path = req.path;
 
-        if (relative_path.find(loc.path) == 0)
-            relative_path = relative_path.substr(loc.path.length());
-
+        // if (relative_path.find(loc.path) == 0)
+        //     relative_path = relative_path.substr(loc.path.length());
+        if (!relative_path.empty() && relative_path[0] == '/')
+            relative_path = relative_path.substr(1);
         if (!base.empty() && base[base.length() - 1] != '/')
             base += "/";
 

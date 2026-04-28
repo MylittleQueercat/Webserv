@@ -766,6 +766,8 @@ static void handleClientData(size_t& i,
     LocationConfig* loc = matchLocation(*clients[fds[i].fd].config, req.path);
     LocationConfig* loc_with_slash = matchLocation(*clients[fds[i].fd].config, req.path + "/");
 
+    std::cerr << "DEBUG loc: " << (loc ? loc->path : "NULL") << std::endl;  // ← 加这行
+    std::cerr << "DEBUG loc_with_slash: " << (loc_with_slash ? loc_with_slash->path : "NULL") << std::endl;  // ← 加这行
     if (loc_with_slash)
         loc = loc_with_slash;  // prefer more specific match
 
@@ -792,11 +794,14 @@ static void handleClientData(size_t& i,
 
     //7. Method not allowed check
     bool method_allowed = false;
+    std::cerr << "DEBUG methods size: " << loc->methods.size() << std::endl;  // ← 加这行
     for (size_t j = 0; j < loc->methods.size(); j++)
 	{
+         std::cerr << "DEBUG method[" << j << "]: [" << loc->methods[j] << "]" << std::endl;  // ← 加这行
         if (loc->methods[j] == req.method)
             method_allowed = true;
     }
+    std::cerr << "DEBUG req.method: [" << req.method << "]" << std::endl;  // ← 加这行
     if (!method_allowed)
 	{
         std::string resp = buildErrorResponse(405, *clients[fds[i].fd].config);
@@ -813,7 +818,7 @@ static void handleClientData(size_t& i,
 //     {
 //         ClientState& cgi_client = clients[fds[i].fd];
 // =======
-    if ((req.method == "POST") &&
+    if ((req.method == "POST" || req.method == "GET") &&
     !loc->cgi_ext.empty() &&
     req.path.find(loc->cgi_ext) != std::string::npos) {
         // startCGI(req, *loc, clients[fds[i].fd], false);
