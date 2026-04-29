@@ -3,10 +3,10 @@
 /*                                                        :::      ::::::::   */
 /*   CGI.cpp                                            :+:      :+:    :+:   */
 /*                                                    +:+ +:+         +:+     */
-/*   By: hguo <hguo@student.42.fr>                  +#+  +:+       +#+        */
+/*   By: leticiabi <leticiabi@student.42.fr>        +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2026/03/30 16:51:04 by hguo              #+#    #+#             */
-/*   Updated: 2026/04/27 17:19:40 by hguo             ###   ########.fr       */
+/*   Updated: 2026/04/29 10:57:05 by leticiabi        ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -42,10 +42,7 @@ void cleanupCGI(ClientState& client,
                        std::vector<struct pollfd>& fds,
                        size_t& i)
 {
-    // 关闭并移除 cgi_output_fd（调用者的 fds[i] 就是它，已经处理）
     if (client.cgi_output_fd != -1) {
-        // 注意：如果调用者已经 close 了就不要重复 close
-        // 统一在这里做，调用者不要单独 close
         close(client.cgi_output_fd);
         for (size_t j = 0; j < fds.size(); j++) {
             if (fds[j].fd == client.cgi_output_fd) {
@@ -57,7 +54,6 @@ void cleanupCGI(ClientState& client,
         client.cgi_output_fd = -1;
     }
 
-    // 关闭并移除 cgi_input_fd
     if (client.cgi_input_fd != -1) {
         close(client.cgi_input_fd);
         for (size_t j = 0; j < fds.size(); j++) {
@@ -73,7 +69,7 @@ void cleanupCGI(ClientState& client,
     // 回收子进程，避免僵尸进程
     if (client.cgi_pid > 0) {
         kill(client.cgi_pid, SIGKILL);
-        waitpid(client.cgi_pid, NULL, 0); // 阻塞等待，确保回收
+        waitpid(client.cgi_pid, NULL, 0);
         client.cgi_pid = -1;
     }
 
