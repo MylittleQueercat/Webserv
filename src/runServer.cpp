@@ -6,7 +6,7 @@
 /*   By: lenovo <lenovo@student.42.fr>              +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2026/03/30 16:54:54 by jili              #+#    #+#             */
-/*   Updated: 2026/04/28 14:12:23 by lenovo           ###   ########.fr       */
+/*   Updated: 2026/05/01 20:27:51 by lenovo           ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -238,15 +238,16 @@ static bool handleClientWrite(size_t& i,
                               std::vector<struct pollfd>& fds,
                               std::map<int, ClientState>& clients)
 {
+    //find the client_fd
     std::map<int, ClientState>::iterator it = clients.find(fds[i].fd);
     if (it == clients.end())
         return false;
 
     ClientState& client = it->second;
-
-    if (client.send_buffer.empty())
+    
+    if (client.send_buffer.empty())//user-space send_buffer has no data to send
         return false;
-
+    //send in chunks, at most 64KB per call
     size_t remaining = client.send_buffer.size() - client.send_offset;
     size_t chunk = remaining > 65536 ? 65536 : remaining;
 
@@ -256,9 +257,7 @@ static bool handleClientWrite(size_t& i,
                         0);
 
     if (sent > 0)
-    {
         client.send_offset += static_cast<size_t>(sent);
-    }
     else
     {
         std::cerr << "[HTTP response write failed]" << std::endl;
@@ -268,26 +267,28 @@ static bool handleClientWrite(size_t& i,
         i--;
         return true;
     }
-
+    // all the data are sended
     if (client.send_offset >= client.send_buffer.size())
     {
         bool close_after_send = false;
-
+        //get the header part
         size_t header_end = client.send_buffer.find("\r\n\r\n");
         std::string headers;
         if (header_end != std::string::npos)
             headers = client.send_buffer.substr(0, header_end);
         else
             headers = client.send_buffer;
-
+        //check if there is "connection: close" or not
         headers = toLowerCopy(headers);
         if (headers.find("connection: close") != std::string::npos)
             close_after_send = true;
-
+        //clear the send_buffer
+        //clear(): size = 0 but capacity has not changed;
+        //std::string().swap() : size=0 and capacity = 0
         std::string().swap(client.send_buffer);
         client.send_offset = 0;
 
-        if (close_after_send)
+        if (close_after_send)// if "connection: close"
         {
             close(client.fd);
             clients.erase(client.fd);
@@ -295,7 +296,7 @@ static bool handleClientWrite(size_t& i,
             i--;
             return true;
         }
-
+        //if "Connection: keep-alive", the client_fd waits the next requeriement
         fds[i].events &= ~POLLOUT;
         fds[i].events |= POLLIN;
         return true;
@@ -499,8 +500,7 @@ static bool isRequestComplete(const std::string& rbuf) {
     return body_received >= content_length;
 }
 
-// 5. Session route handler : Returns the full HTTP response string if the path is a session route (4 session-related routes); returns empty string if not a session route
-	//This code uses Cookies for identity during a session (login from submission -> welcome page), not for remembering username across sessions
+// 5. Session manages a group of HTTP requests that belong to the same user interaction (login → welcome → logout). Without session, since HTTP is stateless, the server would forget any information from a previous request (such as the username submitted during login) once the response is sent. Note that the server does not forget the client itself — each client has a unique client_fd that allows it to send multiple requests. With session, specific information from a previous request (like the username) can be reused in subsequent requests without having to resubmit it each time.
 static std::string handleSessionRoute(const HttpRequest& req)
 {
 	//login page
@@ -597,7 +597,7 @@ static void handleClientData(size_t& i,
 	//1. receive data from a connected client
     char buf[4096];
     int  bytes = recv(fds[i].fd, buf, sizeof(buf), 0);
-		// simulation of TCP chunks : in real TCP, a single HTTP request might arrive in multiple recv() calls (multuple poll() iterations)
+	    // simulation of TCP chunks : in real TCP, a single HTTP request might arrive in multiple recv() calls (multuple poll() iterations)
     if (bytes <= 0) {
         close(fds[i].fd);
         clients.erase(fds[i].fd);
@@ -607,7 +607,7 @@ static void handleClientData(size_t& i,
     }
 
     ClientState& client = clients[fds[i].fd];
-
+        //check if the data belong to the cgi body
     if (client.cgi_body_mode)
     {
         client.cgi_body_buffer.append(buf, bytes);
@@ -624,10 +624,10 @@ static void handleClientData(size_t& i,
                 return;
             }
 
-            client.cgi_stdin_sent = 0;
+            client.cgi_stdin_sent = 0;//tracks how many bytes have been sent to the CGI process so far
             client.cgi_body_mode = false;
             std::string().swap(client.cgi_body_buffer);
-
+            //add client.cgi_input_fd in the list of poll()
             struct pollfd input_pfd;
             memset(&input_pfd, 0, sizeof(input_pfd));
             input_pfd.fd = client.cgi_input_fd;
@@ -641,8 +641,8 @@ static void handleClientData(size_t& i,
 
     client.recv_buffer += std::string(buf, bytes);
     std::string& rbuf = client.recv_buffer;
-	//2. First body size check (in header) and ask the permission
-		// “413 Content Too Large”
+	//2. collect the body
+    //“413 Content Too Large” : First body size check with Content-Length and ask the permission 
     if (rbuf.find("\r\n\r\n") != std::string::npos)
 	{
         size_t cl_pos = rbuf.find("Content-Length: ");
@@ -657,13 +657,13 @@ static void handleClientData(size_t& i,
             }
         }
     }
-		//"Expect: 100-continue" ：the client asking for permission before sending a large body - the server either say "100 Continue" (go ahead) or rejects early with 413; It is purely a bandwidth-saving negotiation before committing to sending a large body
+	//"Expect: 100-continue" ：the client asking for permission before sending a large body - the server either say "100 Continue" (go ahead) or rejects early with 413; It is purely a bandwidth-saving negotiation before committing to sending a large body
     if (rbuf.find("Expect: 100-continue") != std::string::npos)
 	{
         std::string cont = "HTTP/1.1 100 Continue\r\n\r\n";
         send(fds[i].fd, cont.c_str(), cont.size(), 0);
     }
-
+    //if the transfer mode is chunkedTransferEncoding and the direction is the CGI processus
     size_t header_end_for_cgi = rbuf.find("\r\n\r\n");
 
     if (header_end_for_cgi != std::string::npos)
@@ -679,7 +679,7 @@ static void handleClientData(size_t& i,
 
             if (cgi_loc_with_slash)
                 cgi_loc = cgi_loc_with_slash;
-
+            //make sure this requirement is for CGI
             if (cgi_loc &&
                 methodAllowed(cgi_loc, head_req.method) &&
                 !cgi_loc->cgi_ext.empty() &&
@@ -695,36 +695,33 @@ static void handleClientData(size_t& i,
                 }
                 
                 startCGI(head_req, *cgi_loc, client, true);
-
+                //set two pipes to non-blocking mode
                 int out_flags = fcntl(client.cgi_output_fd, F_GETFL, 0);
                 fcntl(client.cgi_output_fd, F_SETFL, out_flags | O_NONBLOCK);
 
                 int in_flags = fcntl(client.cgi_input_fd, F_GETFL, 0);
                 fcntl(client.cgi_input_fd, F_SETFL, in_flags | O_NONBLOCK);
-
+                // add cgi_output_fd to poll fds to wait for CGI process output
                 struct pollfd cgi_pfd;
                 memset(&cgi_pfd, 0, sizeof(cgi_pfd));
                 cgi_pfd.fd      = client.cgi_output_fd;
                 cgi_pfd.events  = POLLIN;
                 cgi_pfd.revents = 0;
                 fds.push_back(cgi_pfd);
-
+                //enter cgi_body_mode to collet the chunked body from the client
                 client.cgi_last_activity = time(NULL);
                 client.cgi_body_mode = true;
 
                 std::string already_received_body = rbuf.substr(header_end_for_cgi + 4);
                 if (!already_received_body.empty())
-                {
                     client.cgi_body_buffer.append(already_received_body);
-                }
-
                 client.recv_buffer.clear();
                 return;
             }
         }
     }
 
-    //3. parser complete HTTP request and second body size
+    //3. parser complete HTTP request and second body size check
     if (!isRequestComplete(rbuf))
         return;
 
@@ -753,7 +750,7 @@ static void handleClientData(size_t& i,
         return;
     }
 
-    //4. Session routes (/login, /welcome, /logout)
+    //4. Session requirement
     std::string session_resp = handleSessionRoute(req);
     if (!session_resp.empty())
 	{
@@ -775,7 +772,7 @@ static void handleClientData(size_t& i,
         return;
     }
     
-    //TO BE DISCUSSED : 6. HTTP redirect (301/302) : We should add the 302 part or not?
+    //6. HTTP redirect (301/302)
     if (loc->redirect_code != 0 && !loc->redirect_url.empty())
 	{
         std::ostringstream oss;
@@ -868,7 +865,7 @@ static void handleClientData(size_t& i,
     return;
 }
 
-// ── Main server loop ───────────────────────────────────────────────────────
+// Main server loop 
 void runServer(std::vector<ServerConfig>& configs) {
     std::vector<struct pollfd> fds;//master watch list 
     std::set<int>              server_fds;
@@ -904,24 +901,31 @@ void runServer(std::vector<ServerConfig>& configs) {
 
         checkCGITimeouts(clients, fds);
 
-        for (size_t i = 0; i < fds.size(); i++) {
+        for (size_t i = 0; i < fds.size(); i++)
+        {
+            //Filtrer les fd inactifs
             if (!(fds[i].revents & (POLLIN | POLLOUT | POLLHUP | POLLERR | POLLNVAL)))
                 continue;
-
+            // Client ──→ Serveur ──→ [pipe stdin] ──→ Processus CGI
+            // cgi_input_fd is ready to send data
             if ((fds[i].revents & POLLOUT) && handleCGIInputPipe(i, fds, clients))
                 continue;
-
+            //client_fd is ready to send data -> client
+            //(fds[i].revents & POLLOUT)  → kernel send buffer has space
             if ((fds[i].revents & POLLOUT) && handleClientWrite(i, fds, clients))
                 continue;
-                
+            //Processus CGI → [pipe stdout] → server → Client
+            // POLLIN  : cgi_output_fd has data to read ->server
+            // POLLHUP : CGI process ended, pipe closed
+            // POLLERR : pipe error
             if ((fds[i].revents & (POLLIN | POLLHUP | POLLERR)) &&
                 handleCGIPipe(i, fds, clients))
                 continue;
-
+            //le serveur_socket_fd a reçu une connection de client
             if ((fds[i].revents & POLLIN) &&
                 acceptNewClient(i, fds, server_fds, clients, fd_to_config))
                 continue;
-
+            //client_fd received data from client (client injected data into recv buffer)
             if (fds[i].revents & POLLIN)
                 handleClientData(i, fds, clients, configs);
         }

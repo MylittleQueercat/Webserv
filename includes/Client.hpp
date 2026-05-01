@@ -3,10 +3,10 @@
 /*                                                        :::      ::::::::   */
 /*   Client.hpp                                         :+:      :+:    :+:   */
 /*                                                    +:+ +:+         +:+     */
-/*   By: hguo <hguo@student.42.fr>                  +#+  +:+       +#+        */
+/*   By: lenovo <lenovo@student.42.fr>              +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2026/03/30 17:03:34 by jili              #+#    #+#             */
-/*   Updated: 2026/04/27 11:52:33 by hguo             ###   ########.fr       */
+/*   Updated: 2026/04/29 11:28:52 by lenovo           ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -21,9 +21,9 @@
 //ClientState is a snapshot of everything that the server needs to know about on connected client
 struct ClientState {
     int         fd;
-    std::string recv_buffer;    // accumulated received data
-    std::string send_buffer;    // data waiting to be sent
-    size_t      send_offset;
+    std::string recv_buffer;    // the buffer for data the server has received from this client; 
+    std::string send_buffer;    // the buffer for data the server is going to send to this client
+    size_t      send_offset;    //how many bytes of send_buffer have already been sent
     bool        headers_done;   // have the headers been fully read?
     size_t      content_length; // length of the request body
     ServerConfig *config;       // points to the server config for this client
