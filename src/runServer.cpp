@@ -6,7 +6,7 @@
 /*   By: lenovo <lenovo@student.42.fr>              +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2026/03/30 16:54:54 by jili              #+#    #+#             */
-/*   Updated: 2026/05/01 20:27:51 by lenovo           ###   ########.fr       */
+/*   Updated: 2026/05/01 21:40:39 by lenovo           ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -250,7 +250,7 @@ static bool handleClientWrite(size_t& i,
     //send in chunks, at most 64KB per call
     size_t remaining = client.send_buffer.size() - client.send_offset;
     size_t chunk = remaining > 65536 ? 65536 : remaining;
-
+    //user-space send_buffer → kernel send buffer of client_fd
     ssize_t sent = send(client.fd,
                         client.send_buffer.data() + client.send_offset,
                         chunk,
@@ -772,7 +772,7 @@ static void handleClientData(size_t& i,
         return;
     }
     
-    //6. HTTP redirect (301/302)
+    //6. HTTP redirect (301)
     if (loc->redirect_code != 0 && !loc->redirect_url.empty())
 	{
         std::ostringstream oss;
