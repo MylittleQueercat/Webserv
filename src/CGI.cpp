@@ -3,10 +3,10 @@
 /*                                                        :::      ::::::::   */
 /*   CGI.cpp                                            :+:      :+:    :+:   */
 /*                                                    +:+ +:+         +:+     */
-/*   By: leticiabi <leticiabi@student.42.fr>        +#+  +:+       +#+        */
+/*   By: hguo <hguo@student.42.fr>                  +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2026/03/30 16:51:04 by hguo              #+#    #+#             */
-/*   Updated: 2026/04/29 10:57:05 by leticiabi        ###   ########.fr       */
+/*   Updated: 2026/05/02 10:43:58 by hguo             ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -171,9 +171,8 @@ void startCGI(const HttpRequest &req, const LocationConfig &loc, ClientState &cl
 
         execve(interpreter_path.c_str(), args, &env[0]);
 
-        std::cerr << "[CGI execve failed] path=[" << interpreter_path
-                << "] errno=" << errno
-                << " error=[" << strerror(errno) << "]"
+        std::cerr << "[CGI execve failed] could not execute interpreter path=["
+                << interpreter_path << "]"
                 << std::endl;
         exit(1);
     }

@@ -192,7 +192,7 @@ AI tool was used as a learning and debugging assistant throughout the project:
 
 - **Understanding concepts**: HTTP protocol, CGI communication, non-blocking I/O, poll() event loop, cookie/session mechanics, path traversal attacks.
 - **Debugging**: Identifying bugs such as the missing `POLLHUP` check that caused CGI responses to never arrive, the `cgi_last_activity` uninitialized value causing false timeouts, and the incomplete body reception before request processing.
-- **Code review**: Checking compliance with subject requirements (no `errno` after read/write, single poll loop, non-blocking behavior).
+- **Code review**: Checking compliance with subject requirements.
 - **Test design**: Writing curl commands and Python stress test scripts to validate each feature.
 
 All AI-generated suggestions were reviewed, understood, and validated by the team before integration.
