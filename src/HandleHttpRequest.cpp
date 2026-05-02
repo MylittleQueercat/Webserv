@@ -6,7 +6,7 @@
 /*   By: hguo <hguo@student.42.fr>                  +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2026/03/30 16:55:36 by jili              #+#    #+#             */
-/*   Updated: 2026/04/27 18:12:27 by hguo             ###   ########.fr       */
+/*   Updated: 2026/05/02 09:33:30 by hguo             ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -249,7 +249,9 @@ static std::string getUploadFilePath(const HttpRequest& req, const LocationConfi
     return base + relative;
 }
 
-std::string handlePOST(const HttpRequest &req, const ServerConfig &config, const LocationConfig &loc)
+std::string handlePOST(const HttpRequest &req,
+                       const ServerConfig &config,
+                       const LocationConfig &loc)
 {
     if (loc.upload_store.empty())
     {
@@ -265,12 +267,23 @@ std::string handlePOST(const HttpRequest &req, const ServerConfig &config, const
     std::string filepath = getUploadFilePath(req, loc);
     if (filepath.empty())
         return buildErrorResponse(403, config);
-    std::ofstream outfile(filepath.c_str());
+
+    std::ofstream outfile(filepath.c_str(), std::ios::out | std::ios::binary);
     if (!outfile.is_open())
         return buildErrorResponse(500, config);
 
-    outfile.write(req.body.c_str(), req.body.size());
+    outfile.write(req.body.c_str(), static_cast<std::streamsize>(req.body.size()));
+
+    if (!outfile)
+    {
+        outfile.close();
+        return buildErrorResponse(500, config);
+    }
+
     outfile.close();
+
+    if (!outfile)
+        return buildErrorResponse(500, config);
 
     return "HTTP/1.1 201 Created\r\n"
            "Content-Length: 0\r\n"

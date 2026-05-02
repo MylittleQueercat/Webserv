@@ -6,7 +6,7 @@
 /*   By: hguo <hguo@student.42.fr>                  +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2026/03/30 16:54:54 by jili              #+#    #+#             */
-/*   Updated: 2026/04/27 17:46:19 by hguo             ###   ########.fr       */
+/*   Updated: 2026/05/02 09:37:46 by hguo             ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -150,38 +150,6 @@ static bool hasExpect100Continue(const std::string& header_part)
     return lower.find("expect: 100-continue") != std::string::npos;
 }
 
-// 1. CGI timeout check : Kills CGI processes that have been running for more than 10 seconds
-static void checkCGITimeouts(std::map<int, ClientState>& clients,
-                               std::vector<struct pollfd>& fds) {
-    for (std::map<int, ClientState>::iterator it = clients.begin();
-         it != clients.end(); ++it) {
-        ClientState& c = it->second;
-        if (!c.is_cgi) continue;
-        if (c.cgi_last_activity == 0) continue;
-
-        if (difftime(time(NULL), c.cgi_last_activity) > 60) {
-            std::cerr << "CGI timeout: pid=" << c.cgi_pid << std::endl;
-
-            kill(c.cgi_pid, SIGKILL);
-            waitpid(c.cgi_pid, NULL, WNOHANG);
-
-            for (size_t j = 0; j < fds.size(); j++) {
-                if (fds[j].fd == c.cgi_output_fd) {
-                    close(fds[j].fd);
-                    fds.erase(fds.begin() + j);
-                    break;
-                }
-            }
-            c.cgi_output_fd = -1;
-            c.is_cgi        = false;
-
-            std::string resp = "HTTP/1.1 504 Gateway Timeout\r\n"
-                               "Content-Length: 0\r\n\r\n";
-            send(c.fd, resp.c_str(), resp.size(), 0);
-        }
-    }
-}
-
 static void enablePollOut(int fd, std::vector<struct pollfd>& fds)
 {
     for (size_t j = 0; j < fds.size(); j++)
@@ -201,6 +169,81 @@ static void queueClientResponse(ClientState& client,
     client.send_buffer.swap(response);
     client.send_offset = 0;
     enablePollOut(client.fd, fds);
+}
+
+static void queueInterimResponse(ClientState& client,
+                                 std::vector<struct pollfd>& fds,
+                                 const std::string& response)
+{
+    if (client.send_buffer.empty())
+        client.send_offset = 0;
+
+    client.send_buffer += response;
+    enablePollOut(client.fd, fds);
+}
+
+static void closeAndRemoveFd(std::vector<struct pollfd>& fds, int fd)
+{
+    if (fd < 0)
+        return;
+
+    for (size_t i = 0; i < fds.size(); ++i)
+    {
+        if (fds[i].fd == fd)
+        {
+            close(fds[i].fd);
+            fds.erase(fds.begin() + i);
+            return;
+        }
+    }
+}
+
+// 1. CGI timeout check : Kills CGI processes that have been running for more than 10 seconds
+static void checkCGITimeouts(std::map<int, ClientState>& clients,
+                             std::vector<struct pollfd>& fds)
+{
+    for (std::map<int, ClientState>::iterator it = clients.begin();
+         it != clients.end(); ++it)
+    {
+        ClientState& c = it->second;
+
+        if (!c.is_cgi)
+            continue;
+        if (c.cgi_last_activity == 0)
+            continue;
+
+        if (difftime(time(NULL), c.cgi_last_activity) > 60)
+        {
+            std::cerr << "CGI timeout: pid=" << c.cgi_pid << std::endl;
+
+            if (c.cgi_pid > 0)
+            {
+                kill(c.cgi_pid, SIGKILL);
+                waitpid(c.cgi_pid, NULL, WNOHANG);
+            }
+
+            closeAndRemoveFd(fds, c.cgi_output_fd);
+            closeAndRemoveFd(fds, c.cgi_input_fd);
+
+            c.cgi_output_fd = -1;
+            c.cgi_input_fd = -1;
+            c.cgi_pid = -1;
+            c.is_cgi = false;
+            c.cgi_body_mode = false;
+
+            std::string().swap(c.cgi_output);
+            std::string().swap(c.cgi_body_buffer);
+            std::string().swap(c.cgi_stdin_buffer);
+            c.cgi_stdin_sent = 0;
+
+            std::string resp =
+                "HTTP/1.1 504 Gateway Timeout\r\n"
+                "Connection: close\r\n"
+                "Content-Length: 0\r\n\r\n";
+
+            queueClientResponse(c, fds, resp);
+        }
+    }
 }
 
 static std::string normalizeCgiHeaders(const std::string& raw_headers)
@@ -255,19 +298,27 @@ static bool handleClientWrite(size_t& i,
                         chunk,
                         0);
 
-    if (sent > 0)
+    if (sent < 0)
     {
-        client.send_offset += static_cast<size_t>(sent);
-    }
-    else
-    {
-        std::cerr << "[HTTP response write failed]" << std::endl;
+        std::cerr << "[HTTP response send error]" << std::endl;
         close(client.fd);
         clients.erase(client.fd);
         fds.erase(fds.begin() + i);
         i--;
         return true;
     }
+
+    if (sent == 0)
+    {
+        std::cerr << "[HTTP response send returned 0]" << std::endl;
+        close(client.fd);
+        clients.erase(client.fd);
+        fds.erase(fds.begin() + i);
+        i--;
+        return true;
+    }
+
+    client.send_offset += static_cast<size_t>(sent);
 
     if (client.send_offset >= client.send_buffer.size())
     {
@@ -332,15 +383,38 @@ static bool handleCGIInputPipe(size_t& i,
                                 cgi_client->cgi_stdin_buffer.data() + cgi_client->cgi_stdin_sent,
                                 chunk);
 
-        if (written > 0)
+        if (written < 0)
         {
-            cgi_client->cgi_stdin_sent += static_cast<size_t>(written);
-            cgi_client->cgi_last_activity = time(NULL);
+            std::cerr << "[CGI stdin write error]" << std::endl;
+
+            close(fds[i].fd);
+            fds.erase(fds.begin() + i);
+            i--;
+
+            cgi_client->cgi_input_fd = -1;
+            std::string().swap(cgi_client->cgi_stdin_buffer);
+            cgi_client->cgi_stdin_sent = 0;
+
+            return true;
         }
-        else
+
+        if (written == 0)
         {
-            std::cerr << "[CGI stdin write failed or would block]" << std::endl;
+            std::cerr << "[CGI stdin write returned 0]" << std::endl;
+
+            close(fds[i].fd);
+            fds.erase(fds.begin() + i);
+            i--;
+
+            cgi_client->cgi_input_fd = -1;
+            std::string().swap(cgi_client->cgi_stdin_buffer);
+            cgi_client->cgi_stdin_sent = 0;
+
+            return true;
         }
+
+        cgi_client->cgi_stdin_sent += static_cast<size_t>(written);
+        cgi_client->cgi_last_activity = time(NULL);
     }
 
     if (cgi_client->cgi_stdin_sent >= cgi_client->cgi_stdin_buffer.size())
@@ -356,6 +430,7 @@ static bool handleCGIInputPipe(size_t& i,
 
     return true;
 }
+
 
 // 2. CGI pipe handler : Returns true if the fd was a CGI pipe and was handled
 static bool handleCGIPipe(size_t& i,
@@ -378,7 +453,50 @@ static bool handleCGIPipe(size_t& i,
         return false;
 
     char buf[4096];
-    int bytes = read(fds[i].fd, buf, sizeof(buf));
+
+    if (fds[i].revents & POLLERR)
+    {
+        close(fds[i].fd);
+        fds.erase(fds.begin() + i);
+        i--;
+
+        waitpid(cgi_client->cgi_pid, NULL, WNOHANG);
+        cgi_client->is_cgi = false;
+        cgi_client->cgi_output_fd = -1;
+
+        std::string response =
+            "HTTP/1.1 500 Internal Server Error\r\n"
+            "Connection: close\r\n"
+            "Content-Length: 21\r\n\r\n"
+            "Internal Server Error";
+
+        queueClientResponse(*cgi_client, fds, response);
+        std::string().swap(cgi_client->cgi_output);
+        return true;
+    }
+
+    ssize_t bytes = read(fds[i].fd, buf, sizeof(buf));
+
+    if (bytes < 0)
+    {
+        close(fds[i].fd);
+        fds.erase(fds.begin() + i);
+        i--;
+
+        waitpid(cgi_client->cgi_pid, NULL, WNOHANG);
+        cgi_client->is_cgi = false;
+        cgi_client->cgi_output_fd = -1;
+
+        std::string response =
+            "HTTP/1.1 500 Internal Server Error\r\n"
+            "Connection: close\r\n"
+            "Content-Length: 21\r\n\r\n"
+            "Internal Server Error";
+
+        queueClientResponse(*cgi_client, fds, response);
+        std::string().swap(cgi_client->cgi_output);
+        return true;
+    }
 
     if (bytes > 0)
     {
@@ -598,7 +716,18 @@ static void handleClientData(size_t& i,
     char buf[4096];
     int  bytes = recv(fds[i].fd, buf, sizeof(buf), 0);
 		// simulation of TCP chunks : in real TCP, a single HTTP request might arrive in multiple recv() calls (multuple poll() iterations)
-    if (bytes <= 0) {
+    if (bytes < 0)
+    {
+        std::cerr << "[client recv error]" << std::endl;
+        close(fds[i].fd);
+        clients.erase(fds[i].fd);
+        fds.erase(fds.begin() + i);
+        i--;
+        return;
+    }
+    if (bytes == 0)
+    {
+        std::cerr << "[client closed connection]" << std::endl;
         close(fds[i].fd);
         clients.erase(fds[i].fd);
         fds.erase(fds.begin() + i);
@@ -657,12 +786,6 @@ static void handleClientData(size_t& i,
             }
         }
     }
-		//"Expect: 100-continue" ：the client asking for permission before sending a large body - the server either say "100 Continue" (go ahead) or rejects early with 413; It is purely a bandwidth-saving negotiation before committing to sending a large body
-    if (rbuf.find("Expect: 100-continue") != std::string::npos)
-	{
-        std::string cont = "HTTP/1.1 100 Continue\r\n\r\n";
-        send(fds[i].fd, cont.c_str(), cont.size(), 0);
-    }
 
     size_t header_end_for_cgi = rbuf.find("\r\n\r\n");
 
@@ -687,11 +810,8 @@ static void handleClientData(size_t& i,
             {
                 if (hasExpect100Continue(header_part))
                 {
-                    std::string cont = "HTTP/1.1 100 Continue\r\n\r\n";
-                    ssize_t sent = send(client.fd, cont.c_str(), cont.size(), 0);
-                    std::cerr << "[100 Continue sent] fd=" << client.fd
-                            << " sent=" << sent
-                            << std::endl;
+                    queueInterimResponse(client, fds, "HTTP/1.1 100 Continue\r\n\r\n");
+                    std::cerr << "[100 Continue queued] fd=" << client.fd << std::endl;
                 }
                 
                 startCGI(head_req, *cgi_loc, client, true);
@@ -806,13 +926,6 @@ static void handleClientData(size_t& i,
     }
 
     //8. CGI request
-// <<<<<<< Updated upstream
-//     if (req.method == "POST" &&
-//         !loc->cgi_ext.empty() &&
-//         req.path.find(loc->cgi_ext) != std::string::npos)
-//     {
-//         ClientState& cgi_client = clients[fds[i].fd];
-// =======
     if ((req.method == "POST") &&
     !loc->cgi_ext.empty() &&
     req.path.find(loc->cgi_ext) != std::string::npos) {
