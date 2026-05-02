@@ -1,1 +1,84 @@
-<html><body><h1>Hello We're KongKong and LiJie!</h1></body></html>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>KongKong & Lijie</title>
+    <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+    <div class="background-decor">
+        <span>🐾</span>
+        <span>🐈</span>
+        <span>🐾</span>
+        <span>🐈‍⬛</span>
+        <span>🐾</span>
+    </div>
+
+    <main class="container">
+        <section class="hero-card">
+            <div class="hero-text">
+                <p class="tag">Welcome to our Webserv static demo</p>
+                <h1>Hello We're KongKong and Lijie</h1>
+                <p class="intro">
+                    This is our cute cat-themed test page for Webserv.
+                    It is used to demonstrate that our server can correctly
+                    serve HTML, CSS, JavaScript, and PNG images.
+                </p>
+
+                <div class="button-group">
+                    <a href="#gallery" class="btn primary-btn">Meet the Cats</a>
+                    <a href="#status" class="btn secondary-btn">Check JS Status</a>
+                </div>
+            </div>
+        </section>
+
+        <section class="info-grid">
+            <div class="info-card">
+                <h2>HTML</h2>
+                <p>The page structure is served correctly by Webserv.</p>
+            </div>
+            <div class="info-card">
+                <h2>CSS</h2>
+                <p>The styling is loaded from <code>style.css</code>.</p>
+            </div>
+            <div class="info-card">
+                <h2>JavaScript</h2>
+                <p>The page behavior is loaded from <code>script.js</code>.</p>
+            </div>
+            <div class="info-card">
+                <h2>PNG</h2>
+                <p>Cat images are loaded from the <code>assets/</code> folder.</p>
+            </div>
+        </section>
+
+        <section class="gallery-section" id="gallery">
+            <h2>Our Cat Corner</h2>
+            <p class="section-subtitle">A small gallery to test static image serving ✨</p>
+
+            <div class="gallery">
+                <div class="cat-card">
+                    <img src="/assets/cat.png" alt="Cat 1">
+                    <p>🐾</p>
+                </div>
+                <!-- <div class="cat-card">
+                    <img src="/assets/cat2.png" alt="Cat 2">
+                    <p>Lijie’s favorite pose 🌙</p>
+                </div> -->
+            </div>
+        </section>
+
+        <section class="status-card" id="status">
+            <h2>Live JavaScript Status</h2>
+            <p id="js-message">JavaScript is loading...</p>
+            <p id="clock"></p>
+        </section>
+    </main>
+
+    <footer class="footer">
+        <p>Made with cats, code, and Webserv 🐱</p>
+    </footer>
+
+    <script src="/script.js"></script>
+</body>
+</html>
